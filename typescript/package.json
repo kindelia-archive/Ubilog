@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -15,5 +16,9 @@
   "bugs": {
     "url": "https://github.com/litereum/litcons/issues"
   },
-  "homepage": "https://github.com/litereum/litcons#readme"
+  "homepage": "https://github.com/litereum/litcons#readme",
+  "dependencies": {
+    "heapify": "^0.4.0",
+    "typescript-heapify": "^1.2.0"
+  }
 }
