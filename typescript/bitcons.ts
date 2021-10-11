@@ -777,14 +777,23 @@ export function start_node(port: number = DEFAULT_PORT) {
     var targ = node.chain.target[node.chain.tip[1]];
     var diff = compute_difficulty(targ);
     var rate = diff * TIME_PER_BLOCK;
+    var pendings = node.chain.pending;
+    var pending_size = 0;
+    var pending_seen = 0;
+    for (var bhash in pendings) {
+      if (node.chain.seen[bhash]) {
+        pending_seen += 1;
+      }
+      pending_size += 1;
+    }
     console.clear();
     console.log("Bit-Cons");
     console.log("- current_time  : " + Date.now() + " UTC");
     console.log("- online_peers  : " + Object.keys(node.peers).length + " peers");
     console.log("- chain_height  : " + get_longest_chain(node.chain).length + " blocks");
-    console.log("- database_size : " + (Object.keys(node.chain.block).length - 1) + " blocks");
-    console.log("- pending_size  : " + Object.keys(node.chain.pending).length + " blocks");
-    console.log("- own_mined     : " + MINED + " blocks");
+    console.log("- database      : " + (Object.keys(node.chain.block).length - 1) + " blocks");
+    console.log("- pending       : " + pending_size + " blocks (" + pending_seen + " downloaded)");
+    console.log("- total_mined   : " + MINED + " blocks");
     console.log("- own_hash_rate : " + MINER_HASHRATE + " hashes / second");
     console.log("- net_hash_rate : " + rate + " hashes / second");
     console.log("- difficulty    : " + diff + " hashes / block");
