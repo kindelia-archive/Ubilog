@@ -332,22 +332,20 @@ function add_block(chain: Chain, block: Block) {
         var advances_time = block.time > chain.block[phash].time
         if (has_enough_work && advances_time) {
           chain.work[bhash] = chain.work[phash] + work
-          if (bhash !== HashZero) {
+          if (phash !== HashZero) {
             chain.height[bhash] = chain.height[phash] + 1n
           }
           // Difficulty readjustment
-          if (chain.height[bhash] % BLOCKS_PER_PERIOD === 0n) {
+          if (chain.height[bhash] > 0n && chain.height[bhash] % BLOCKS_PER_PERIOD === 0n) {
             var checkpoint_hash = phash;
-            console.log("<- " + checkpoint_hash);
             for (var i = 0n; i < BLOCKS_PER_PERIOD - 1n; ++i) {
               checkpoint_hash = chain.block[checkpoint_hash].prev;
-              console.log("<- " + checkpoint_hash);
             }
             var period_time = Number(block.time - chain.block[checkpoint_hash].time);
             var last_target = chain.target[phash];
-            console.log("from " + hash_block(chain.block[checkpoint_hash]));
-            console.log("to   " + hash_block(block));
-            console.log("->", TIME_PER_PERIOD, period_time, Math.floor(2 ** 32 * Number(TIME_PER_PERIOD) / period_time));
+            //console.log("from " + hash_block(chain.block[checkpoint_hash]));
+            //console.log("to   " + hash_block(block));
+            //console.log("->", TIME_PER_PERIOD, period_time, Math.floor(2 ** 32 * Number(TIME_PER_PERIOD) / period_time));
 
             //-> 20000n 0 Infinity
             //error: Uncaught RangeError: The number Infinity cannot be converted to a BigInt because it is not an integer
@@ -355,10 +353,10 @@ function add_block(chain: Chain, block: Block) {
 
             var next_target = compute_next_target(last_target, BigInt(Math.floor(2 ** 32 * Number(TIME_PER_PERIOD) / period_time)))
             chain.target[bhash] = next_target
-            console.log("A period should last   " + TIME_PER_PERIOD + " seconds.");
-            console.log("The last period lasted " + period_time + " seconds.");
-            console.log("The last difficulty was " + compute_difficulty(last_target) + " hashes per block.");
-            console.log("The next difficulty is  " + compute_difficulty(next_target) + " hashes per block.");
+            //console.log("A period should last   " + TIME_PER_PERIOD + " seconds.");
+            //console.log("The last period lasted " + period_time + " seconds.");
+            //console.log("The last difficulty was " + compute_difficulty(last_target) + " hashes per block.");
+            //console.log("The next difficulty is  " + compute_difficulty(next_target) + " hashes per block.");
           // Keep old difficulty
           } else {
             chain.target[bhash] = chain.target[phash]
@@ -718,13 +716,14 @@ export function start_node(port: number = DEFAULT_PORT) {
         var block = node.chain.block[message.bhash];
         if (block) {
           send(sender, {ctor: "PutBlock", block});
+          //console.log("send asked block");
           // Gets some children to send too
-          for (var i = 0; i < 8; ++i) {
-            var block = node.chain.block[block.prev];
-            if (block) {
-              send(sender, {ctor: "PutBlock", block});
-            }
-          }
+          //for (var i = 0; i < 8; ++i) {
+            //var block = node.chain.block[block.prev];
+            //if (block) {
+              //send(sender, {ctor: "PutBlock", block});
+            //}
+          //}
         }
         break;
     }
@@ -756,17 +755,22 @@ export function start_node(port: number = DEFAULT_PORT) {
       send(peer.address, { ctor: "PutBlock", block });
     }
   }
-  setInterval(gossiper, 1000 / 4);
+  setInterval(gossiper, 1000);
 
   // Requests missing blocks
   function requester() {
     for (var bhash in node.chain.pending) {
-      for (var peer of all_peers()) {
-        send(peer.address, { ctor: "AskBlock", bhash });
+      var count = 0;
+      if (!node.chain.seen[bhash]) {
+        for (var peer of all_peers()) {
+          send(peer.address, { ctor: "AskBlock", bhash });
+          ++count;
+        }
       }
+      //console.log("asked " + count + " pendings");
     }
   }
-  setInterval(requester, 1000 / 16);
+  setInterval(requester, 1000 / 32);
 
   // Displays status
   function displayer() {
@@ -779,6 +783,7 @@ export function start_node(port: number = DEFAULT_PORT) {
     console.log("- online_peers  : " + Object.keys(node.peers).length + " peers");
     console.log("- chain_height  : " + get_longest_chain(node.chain).length + " blocks");
     console.log("- database_size : " + (Object.keys(node.chain.block).length - 1) + " blocks");
+    console.log("- pending_size  : " + Object.keys(node.chain.pending).length + " blocks");
     console.log("- own_mined     : " + MINED + " blocks");
     console.log("- own_hash_rate : " + MINER_HASHRATE + " hashes / second");
     console.log("- net_hash_rate : " + rate + " hashes / second");
