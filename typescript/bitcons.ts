@@ -26,9 +26,9 @@ type Body = Uint8Array // 1280 bytes
 
 type Block = {
   prev: Hash
-  targ: U64
   time: U64
   name: U64
+  misc: U64
   nonc: U64
   body: Body // 1280 bytes
 }
@@ -39,6 +39,7 @@ type Chain = {
   pending: Dict<Array<Block>>
   work: Dict<Nat>
   height: Dict<Nat>
+  target: Dict<Nat>
   seen: Dict<1>
   tip: [U64, Hash]
 }
@@ -188,7 +189,7 @@ function decompress_nat(pack: U64): Nat {
 // Hashing
 // -------
 
-const ZeroHash : Hash = HASH("0x0000000000000000000000000000000000000000000000000000000000000000");
+const HashZero : Hash = HASH("0x0000000000000000000000000000000000000000000000000000000000000000");
 
 function u64_to_uint8array(value: U64): Uint8Array {
   var bytes : F64[] = [];
@@ -210,12 +211,31 @@ function hash_to_uint8array(hash: Hash): Uint8Array {
   return u256_to_uint8array(BigInt(hash));
 }
 
+function compute_difficulty(target: Nat): Nat {
+  return 2n ** 256n / (2n ** 256n - target);
+}
+
+function compute_target(difficulty: Nat): Nat {
+  return 2n ** 256n - 2n ** 256n / difficulty;
+}
+
+// Computes next target by scaling the current difficulty by a `scale` factor
+// Since the factor is an integer, it is divided by 2^32 to allow integer division
+// - compute_next_target(t, 2n**32n / 2n): difficulty halves
+// - compute_next_target(t, 2n**32n * 1n): nothing changes
+// - compute_next_target(t, 2n**32n * 2n): difficulty doubles
+function compute_next_target(last_target: Nat, scale: Nat): Nat {
+  var last_difficulty = compute_difficulty(last_target);
+  var next_difficulty = 1n + (last_difficulty * scale - 1n) / (2n ** 32n);
+  return compute_target(next_difficulty);
+}
+
 function get_hash_work(hash: Hash) : Nat {
   let value = BigInt(HASH(hash))
   if (value === 0n) {
-    return 0n;
+    return 0n
   } else {
-    return (2n ** 256n) / (2n ** 256n - value)
+    return compute_difficulty(value)
   }
 }
 
@@ -224,14 +244,14 @@ function hash_uint8array(words: Uint8Array) : Hash {
 }
 
 function hash_block(block: Block) : Hash {
-  if ((block.prev === ZeroHash) && (block.targ === 0n) && (block.time === 0n) && (block.name === 0n) && (block.nonc === 0n)) {
-    return ZeroHash;
+  if ((block.prev === HashZero) && (block.time === 0n) && (block.name === 0n) && (block.misc === 0n) && (block.nonc === 0n)) {
+    return HashZero;
   } else {
     return hash_uint8array(new Uint8Array([
       ...hash_to_uint8array(block.prev),
-      ...u64_to_uint8array(block.targ),
       ...u64_to_uint8array(block.time),
       ...u64_to_uint8array(block.name),
+      ...u64_to_uint8array(block.misc),
       ...u64_to_uint8array(block.nonc),
       ...block.body,
     ]))
@@ -242,11 +262,11 @@ function hash_slice(slice: Slice) : Hash {
   return hash_uint8array(bits_to_uint8array(serialize_slice(slice)));
 }
 
-function mine(block: Block, target_work: Nat, max_attempts: F64) : Block | null {
+function mine(block: Block, target: Nat, max_attempts: F64) : Block | null {
   for (var i = 0n; i < max_attempts; ++i) {
     var block = {...block, nonc: BigInt(Math.floor(Math.random() * (2 ** 48)))}
-    var work = get_hash_work(hash_block(block))
-    if (work >= target_work) {
+    var hash = hash_block(block);
+    if (BigInt(hash) > target) {
       return block
     }
   }
@@ -256,58 +276,119 @@ function mine(block: Block, target_work: Nat, max_attempts: F64) : Block | null 
 // Chain
 // -----
 
-const ZeroBody : Body = new Uint8Array(1280);
-const InitTarg : U64 = compress_nat(1000n);
-const ZeroBlock : Block = {prev: ZeroHash, targ: InitTarg, time: 0n, name: 0n, nonc: 0n, body: ZeroBody};
+// don't accept blocks from 1 hour in the future
+const DELAY_TOLERANCE : Nat = 60n * 60n * 1000n;
+
+// readjusts difficulty every 20 blocks
+const BLOCKS_PER_PERIOD : Nat = 20n;
+
+// 1 second per block
+const TIME_PER_BLOCK : Nat = 1000n;
+
+// readjusts difficulty every 60 seconds
+const TIME_PER_PERIOD : Nat = TIME_PER_BLOCK * BLOCKS_PER_PERIOD;
+
+// initial target of 256 hashes per block
+const INITIAL_TARGET : Nat = compute_target(256n);
+
+const EmptyBody : Body = new Uint8Array(1280);
+
+const BlockZero : Block = {
+  prev: HashZero,
+  time: 0n,
+  name: 0n,
+  misc: 0n,
+  nonc: 0n,
+  body: EmptyBody,
+};
 
 function initial_chain() : Chain {
-  let block : Dict<Block> = {[ZeroHash]: ZeroBlock}
-  let children : Dict<Array<Hash>> = {[ZeroHash]: []}
+  let block : Dict<Block> = {[HashZero]: BlockZero}
+  let children : Dict<Array<Hash>> = {[HashZero]: []}
   let pending : Dict<Array<Block>> = {}
-  let work : Dict<Nat> = {[ZeroHash]: 0n}
-  let height : Dict<Nat> = {[ZeroHash]: 0n}
+  let work : Dict<Nat> = {[HashZero]: 0n}
+  let height : Dict<Nat> = {[HashZero]: 0n}
+  let target : Dict<Nat> = {[HashZero]: INITIAL_TARGET}
   let seen : Dict<1> = {}
-  let tip : [U256, Hash] = [0n, ZeroHash]
-  return {block, children, pending, work, height, seen, tip}
+  let tip : [U256, Hash] = [0n, HashZero]
+  return {block, children, pending, work, height, target, seen, tip}
 }
 
 function add_block(chain: Chain, block: Block) {
-  let bhash = hash_block(block)
-  if (chain.block[bhash] === undefined) {
-    let phash = block.prev
-    // If previous block is available, add the block
-    if (chain.block[phash] !== undefined) {
-      var work = get_hash_work(bhash)
-      chain.block[bhash] = block
-      chain.work[bhash] = 0n
-      chain.height[bhash] = 0n
-      chain.children[bhash] = []
-      if (BigInt(bhash) >= chain.block[phash].targ) {
-        chain.work[bhash] = chain.work[phash] + work
-        chain.height[bhash] = chain.height[phash] + 1n
-        chain.children[phash].push(bhash)
-        if (chain.work[bhash] > chain.tip[0]) {
-          chain.tip = [chain.work[bhash], bhash];
+  if (block.time < BigInt(Date.now()) + DELAY_TOLERANCE) {
+    let bhash = hash_block(block)
+    if (chain.block[bhash] === undefined) {
+      let phash = block.prev
+      // If previous block is available, add the block
+      if (chain.block[phash] !== undefined) {
+        var work = get_hash_work(bhash)
+        chain.block[bhash] = block
+        chain.work[bhash] = 0n
+        chain.height[bhash] = 0n
+        chain.target[bhash] = 0n
+        chain.children[bhash] = []
+        // If the block is valid
+        var has_enough_work = BigInt(bhash) >= chain.target[phash]
+        var advances_time = block.time > chain.block[phash].time
+        if (has_enough_work && advances_time) {
+          chain.work[bhash] = chain.work[phash] + work
+          if (bhash !== HashZero) {
+            chain.height[bhash] = chain.height[phash] + 1n
+          }
+          // Difficulty readjustment
+          if (chain.height[bhash] % BLOCKS_PER_PERIOD === 0n) {
+            var checkpoint_hash = phash;
+            console.log("<- " + checkpoint_hash);
+            for (var i = 0n; i < BLOCKS_PER_PERIOD - 1n; ++i) {
+              checkpoint_hash = chain.block[checkpoint_hash].prev;
+              console.log("<- " + checkpoint_hash);
+            }
+            var period_time = Number(block.time - chain.block[checkpoint_hash].time);
+            var last_target = chain.target[phash];
+            console.log("from " + hash_block(chain.block[checkpoint_hash]));
+            console.log("to   " + hash_block(block));
+            console.log("->", TIME_PER_PERIOD, period_time, Math.floor(2 ** 32 * Number(TIME_PER_PERIOD) / period_time));
+
+            //-> 20000n 0 Infinity
+            //error: Uncaught RangeError: The number Infinity cannot be converted to a BigInt because it is not an integer
+            //var next_target = compute_next_target(last_target, BigInt(Math.floor(2 ** 32 * Number(TIME_PER_PERIOD) / period_time)))
+
+            var next_target = compute_next_target(last_target, BigInt(Math.floor(2 ** 32 * Number(TIME_PER_PERIOD) / period_time)))
+            chain.target[bhash] = next_target
+            console.log("A period should last   " + TIME_PER_PERIOD + " seconds.");
+            console.log("The last period lasted " + period_time + " seconds.");
+            console.log("The last difficulty was " + compute_difficulty(last_target) + " hashes per block.");
+            console.log("The next difficulty is  " + compute_difficulty(next_target) + " hashes per block.");
+          // Keep old difficulty
+          } else {
+            chain.target[bhash] = chain.target[phash]
+          }
+          // Refresh tip
+          if (chain.work[bhash] > chain.tip[0]) {
+            chain.tip = [chain.work[bhash], bhash];
+          }
         }
+        // Registers this block as a child
+        chain.children[phash].push(bhash)
+        // Add all blocks that were waiting for this block
+        for (var pending of (chain.pending[bhash] || [])) {
+          add_block(chain, pending)
+        }
+        delete chain.pending[bhash];
+      // Otherwise, add this block to the previous block's pending list
+      } else if (chain.seen[bhash] === undefined) {
+        chain.pending[phash] = chain.pending[phash] || [];
+        chain.pending[phash].push(block)
       }
-      // Add all blocks that were waiting for this block
-      for (var pending of (chain.pending[bhash] || [])) {
-        add_block(chain, pending)
-      }
-      delete chain.pending[bhash];
-    // Otherwise, add this block to the previous block's pending list
-    } else if (chain.seen[bhash] === undefined) {
-      chain.pending[phash] = chain.pending[phash] || [];
-      chain.pending[phash].push(block)
+      chain.seen[bhash] = 1
     }
-    chain.seen[bhash] = 1
   }
 }
 
 function get_longest_chain(chain: Chain) : Array<Block> {
   var longest = [];
   var bhash = chain.tip[1];
-  while (chain.block[bhash] !== undefined && bhash !== ZeroHash) {
+  while (chain.block[bhash] !== undefined && bhash !== HashZero) {
     var block = chain.block[bhash];
     longest.push(block);
     bhash = block.prev;
@@ -325,24 +406,31 @@ function get_address_hostname(address: Address) : string {
   return "";
 }
 
-function show_chain(chain: Chain) {
+function show_block(chain: Chain, block: Block, index: number) {
+  let bhash = hash_block(block)
+  let work = chain.work[bhash] || 0n
+  let show_index = BigInt(index).toString()
+  let show_time = block.time.toString(10);
+  let show_body = [].slice.call(block.body,0,32).map((x:number) => pad_left(2,"0",x.toString(16))).join("");
+  let show_hash = bhash
+  let show_work = work.toString()
+  return ""
+    + pad_left(6, '0', show_index) + " | "
+    + pad_left(13, '0', show_time) + " | "
+    + pad_left(64, '0', show_body) + " | "
+    + pad_left(64, '0', show_hash) + " | "
+    + pad_left(8, '0', show_work);
+}
+
+function show_chain(chain: Chain, lines: number) {
+  var count = Math.floor(lines / 2);
   let blocks = get_longest_chain(chain)
-  let blocks_length = blocks.length
-  let blocks_indexed : Array<[Nat,Block]> = blocks.map((block, i) => [BigInt(i), block])
-  var text = "index  | body[0]                                                          | hash                                                             | work\n";
-  for (let index_block of blocks_indexed) {
-    let [index, block] = index_block
-    let bhash = hash_block(block)
-    let work = chain.work[bhash] || 0n
-    let show_index = BigInt(index).toString()
-    let show_body = pad_left(64,"0",[].slice.call(block.body,0,32).map((x:number) => pad_left(2,"0",x.toString(16))).join(""))
-    let show_hash = bhash
-    let show_work = work.toString()
-    text += ""
-      + pad_left(6, '0', show_index) + " | "
-      + pad_left(64, '0', show_body) + " | "
-      + pad_left(64, '0', show_hash) + " | "
-      + pad_left(8, '0', show_work) + "\n";
+  var text = "index  | time          | body[0/32]                                                       | hash                                                             | work\n";
+  for (var i = 0; i < Math.min(blocks.length, count); ++i) {
+    text += show_block(chain, blocks[i], i) + "\n";
+  }
+  for (var i = Math.max(blocks.length - count, count); i < blocks.length; ++i) {
+    text += show_block(chain, blocks[i], i) + "\n";
   }
   return text;
 }
@@ -474,22 +562,22 @@ function deserialize_hash(bits: Bits): [Bits, Hash] {
 
 function serialize_block(block: Block) : Bits {
   var prev = serialize_hash(block.prev);
-  var targ = serialize_fixlen(64, block.targ);
   var time = serialize_fixlen(64, block.time);
   var name = serialize_fixlen(64, block.name);
+  var misc = serialize_fixlen(64, block.misc);
   var nonc = serialize_fixlen(64, block.nonc);
   var body = serialize_uint8array(1280, block.body);
-  return prev + targ + time + name + nonc + body;
+  return prev + time + name + misc + nonc + body;
 }
 
 function deserialize_block(bits: Bits) : [Bits, Block] {
   var [bits,prev] = deserialize_hash(bits);
-  var [bits,targ] = deserialize_fixlen(64, bits);
   var [bits,time] = deserialize_fixlen(64, bits);
   var [bits,name] = deserialize_fixlen(64, bits);
+  var [bits,misc] = deserialize_fixlen(64, bits);
   var [bits,nonc] = deserialize_fixlen(64, bits);
   var [bits,body] = deserialize_uint8array(1280, bits);
-  return [bits, {prev, targ, time, name, nonc, body}];
+  return [bits, {prev, time, name, misc, nonc, body}];
 }
 
 function serialize_message(message: Message) : Bits {
@@ -567,6 +655,10 @@ function udp_receive<T>(udp: any, callback: (address: Address, message: Message)
 // ----
 
 export function start_node(port: number = DEFAULT_PORT) {
+  const MINER_CPS = 16;
+  const MINER_HASHRATE = 1024;
+  var MINED = 0;
+
   // Initializes the node
   var peers : Dict<Peer> = {};
   for (let peer_port of [42000, 42001, 42002]) {
@@ -578,7 +670,7 @@ export function start_node(port: number = DEFAULT_PORT) {
   var slices : Heap<Slice> = [];
   var node : Node = { port, peers, chain, slices };
 
-  var body : Body = ZeroBody;
+  var body : Body = EmptyBody;
   body[0] = (port % 42000);
 
   // Initializes sockets
@@ -626,6 +718,13 @@ export function start_node(port: number = DEFAULT_PORT) {
         var block = node.chain.block[message.bhash];
         if (block) {
           send(sender, {ctor: "PutBlock", block});
+          // Gets some children to send too
+          for (var i = 0; i < 8; ++i) {
+            var block = node.chain.block[block.prev];
+            if (block) {
+              send(sender, {ctor: "PutBlock", block});
+            }
+          }
         }
         break;
     }
@@ -634,17 +733,20 @@ export function start_node(port: number = DEFAULT_PORT) {
 
   // Attempts to mine a new block
   function miner() {
-    setTimeout(() => {
-      var tip_hash = node.chain.tip[1]
-      var tip_block = node.chain.block[tip_hash];
-      var new_block = mine({...ZeroBlock, body, prev: tip_hash}, decompress_nat(tip_block.targ), 1000);
-      if (new_block !== null) {
-        add_block(node.chain, new_block as Block);
-        displayer();
-      }
-    }, 50);
+    var tip_hash = node.chain.tip[1]
+    var tip_block = node.chain.block[tip_hash];
+    var tip_target = node.chain.target[tip_hash];
+    var max_hashes = MINER_HASHRATE / MINER_CPS;
+    var new_block = mine({...BlockZero, body, prev: tip_hash, time: BigInt(Date.now())}, tip_target, max_hashes);
+    //console.log("[miner] Difficulty: " + compute_difficulty(tip_target) + " hashes/block. Power: " + max_hashes + " hashes.");
+    if (new_block !== null) {
+      MINED += 1;
+      //console.log("[miner] Mined! Block: " + hash_block(new_block));
+      add_block(node.chain, new_block);
+      displayer();
+    }
   }
-  setInterval(miner, 2000);
+  setInterval(miner, 1000 / MINER_CPS);
 
   // Sends our tip block to random peers
   function gossiper() {
@@ -668,27 +770,39 @@ export function start_node(port: number = DEFAULT_PORT) {
 
   // Displays status
   function displayer() {
+    var targ = node.chain.target[node.chain.tip[1]];
+    var diff = compute_difficulty(targ);
+    var rate = diff * TIME_PER_BLOCK;
     console.clear();
-    console.log(show_chain(node.chain));
+    console.log("Bit-Cons");
+    console.log("- current_time  : " + Date.now() + " UTC");
+    console.log("- online_peers  : " + Object.keys(node.peers).length + " peers");
+    console.log("- chain_height  : " + get_longest_chain(node.chain).length + " blocks");
+    console.log("- database_size : " + (Object.keys(node.chain.block).length - 1) + " blocks");
+    console.log("- own_mined     : " + MINED + " blocks");
+    console.log("- own_hash_rate : " + MINER_HASHRATE + " hashes / second");
+    console.log("- net_hash_rate : " + rate + " hashes / second");
+    console.log("- difficulty    : " + diff + " hashes / block");
+    console.log(show_chain(node.chain, 32));
   }
-  setInterval(displayer, 2000);
+  setInterval(displayer, 1000);
 }
 
 //var port = Number(Deno.args[0]) || 42000;
 //start_node(port);
 
 function test_0() {
-  var block_0 = mine({...ZeroBlock, prev: ZeroHash}, 1000n, 999999) || ZeroBlock;
-  var block_1 = mine({...ZeroBlock, prev: hash_block(block_0)}, 1000n, 999999) || ZeroBlock;
-  var block_2 = mine({...ZeroBlock, prev: hash_block(block_1)}, 1000n, 999999) || ZeroBlock;
+  var block_0 = mine({...BlockZero, prev: HashZero}, 1000n, 999999) || BlockZero;
+  var block_1 = mine({...BlockZero, prev: hash_block(block_0)}, 1000n, 999999) || BlockZero;
+  var block_2 = mine({...BlockZero, prev: hash_block(block_1)}, 1000n, 999999) || BlockZero;
 
   var chain = initial_chain();
   add_block(chain, block_0);
   add_block(chain, block_1);
   add_block(chain, block_2);
-  console.log(show_chain(chain));
+  console.log(show_chain(chain, 8));
 
   console.log(serialize_block(block_2));
 }
 
-//test_0()
+//start_node(42000);
