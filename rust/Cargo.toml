@@ -17,6 +17,8 @@ path = "src/main.rs"
 hex = "0.4.3"
 hex-literal = "0.3.3"
 bitvec = "0.20"
+num-traits = "0.2"
+num-bigint = "0.4"
 primitive-types = { version = "0.10.1" }
 rand = "0.8.4"
 sha3 = "0.9.1"
