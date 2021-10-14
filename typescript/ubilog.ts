@@ -3,8 +3,8 @@ import {keccak256} from "./keccak256.ts"
 //import {path from "path"
 
 // Persistence:
-// ~/.bitcons/blocks/HASH
-// ~/.bitcons/longest
+// ~/.ubilog/blocks/HASH
+// ~/.ubilog/longest
 
 // Types
 // =====
