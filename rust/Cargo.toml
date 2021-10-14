@@ -1,16 +1,16 @@
 [package]
-name = "bitcons-rust"
+name = "ubilog"
 version = "0.1.0"
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "bitcons"
+name = "ubilog"
 path = "src/lib.rs"
 
 [[bin]]
-name = "bitcons-rs"
+name = "ubilog-rs"
 path = "src/main.rs"
 
 [dependencies]
