@@ -1,13 +1,16 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
 use std::collections::BinaryHeap;
+use std::collections::HashMap;
 
 use bitvec::prelude as bv;
-use num_bigint::BigUint as Nat;
+use num_bigint;
 use num_traits::{One, Zero};
 use primitive_types::U256;
 use sha3::Digest;
+
+type Nat = num_bigint::BigUint;
+type Bits = bv::BitVec<bv::Lsb0, u8>;
 
 // Sizes
 
@@ -26,6 +29,8 @@ pub const PORT_SIZE: usize = 2;
 // Blockchain
 // ----------
 
+type U256Map<T> = HashMap<U256, T>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Body {
     val: [u8; BODY_SIZE],
@@ -34,21 +39,18 @@ pub struct Body {
 #[derive(Debug, Default, PartialEq)]
 pub struct Block {
     prev: U256, // previous block (32 bytes)
-    time: u64,
-    name: u64,
-    nonc: u64,
-    misc: u64,
+    time: U256,
     body: Body, // block contents (1280 bytes)
 }
 
 struct Chain {
-    block: HashMap<U256, Block>,
-    children: HashMap<U256, Vec<U256>>,
-    pending: HashMap<U256, Vec<Block>>,
-    work: HashMap<U256, U256>,
-    height: HashMap<U256, U256>,
-    target: HashMap<U256, U256>,
-    seen: HashMap<U256, ()>,
+    block: U256Map<Block>,
+    children: U256Map<Vec<U256>>,
+    pending: U256Map<Vec<Block>>,
+    work: U256Map<U256>,
+    height: U256Map<U256>,
+    target: U256Map<U256>,
+    seen: U256Map<()>,
     tip: (u64, U256),
 }
 
@@ -74,15 +76,15 @@ enum Address {
     IP(std::net::IpAddr, u16),
 }
 
-#[derive(Debug, PartialEq)]
-struct Slice {
-    nonc: u64,
-    data: bv::BitVec,
-}
-
 struct Peer {
     seen_at: Nat,
     address: Address,
+}
+
+#[derive(Debug, PartialEq)]
+struct Slice {
+    work: u64,
+    data: Bits,
 }
 
 #[derive(Debug, PartialEq)]
@@ -97,7 +99,6 @@ pub const MESSAGE_PUT_PEERS: u8 = 0;
 pub const MESSAGE_PUT_SLICE: u8 = 1;
 pub const MESSAGE_PUT_BLOCK: u8 = 2;
 pub const MESSAGE_ASK_BLOCK: u8 = 3;
-
 
 struct Mail {
     sent_by: Peer,
@@ -129,19 +130,40 @@ fn nat_from_u256(n: &U256) -> Nat {
     res
 }
 
-// Hashing
-// -------
+fn compress_nat(numb: Nat) -> u64 {
+    let exp: i64 = numb.bits() as i64;
+    let drop = exp - 48;
+    let drop = std::cmp::max(drop, 0);
+    let drop_nat = Nat::from(drop as u64);
+    let numb: Nat = (numb >> drop) << 16 | drop_nat;
+    numb.to_u64_digits()[0]
+}
+
+fn decompress_nat(pack: u64) -> Nat {
+    let drop = pack & 0xffff;
+    let numb = Nat::from(pack >> 16) << drop;
+    numb
+}
 
 // String
 // ------
 
 fn pad_left(len: usize, fill: &str, str: &str) -> String {
-    // TODO
-    String::from("")
+    let dif = len - str.len();
+    let num = dif / fill.len();
+    let num = if dif % fill.len() != 0 { num + 1 } else { num };
+    let mut result = String::new();
+    for _ in 0..num {
+        result += fill;
+    }
+    result += str;
+    result.chars().take(len).collect()
 }
 
+// Hashing
+// -------
+
 fn compute_difficulty(hash: Nat) -> Nat {
-    // TODO u256_max ≠ 2^256
     let one: Nat = One::one();
     let b256: Nat = one << 256;
     b256.clone() / (b256 - hash)
@@ -174,7 +196,7 @@ fn get_hash_work(hash: &U256) -> Nat {
 }
 
 fn hash_block(block: &Block) -> U256 {
-    if block.prev.is_zero() && block.time == 0 && block.name == 0 && block.nonc == 0 && block.misc == 0 {
+    if block.prev.is_zero() && block.time.is_zero() {
         return U256::zero();
     }
     let mut hasher = sha3::Keccak256::new();
@@ -182,22 +204,25 @@ fn hash_block(block: &Block) -> U256 {
     let mut buf_hash = [0u8; HASH_SIZE];
     block.prev.to_little_endian(&mut buf_hash);
     hasher.update(&buf_hash);
+    block.time.to_little_endian(&mut buf_hash);
+    hasher.update(&buf_hash);
 
-    let nonc_bytes = block.time.to_le_bytes();
-    hasher.update(&nonc_bytes);
-    let misc_bytes = block.name.to_le_bytes();
-    hasher.update(&misc_bytes);
-    let name_bytes = block.misc.to_le_bytes();
-    hasher.update(&name_bytes);
-    let time_bytes = block.nonc.to_le_bytes();
-    hasher.update(&time_bytes);
+    hasher.update(&block.body.val);
 
     let hash = hasher.finalize();
     U256::from_little_endian(&hash)
 }
 
 fn hash_slice(slice: &Slice) -> U256 {
-    U256::from(0)
+    let mut hasher = sha3::Keccak256::new();
+
+    let buf = slice.work.to_le_bytes();
+    hasher.update(&buf);
+    let buf = slice.data[..].as_slice();
+    hasher.update(&buf);
+
+    let hash = hasher.finalize();
+    U256::from_little_endian(&hash)
 }
 
 // Tests
@@ -221,10 +246,7 @@ mod tests {
 
         let block = Block {
             prev,
-            time: 0,
-            name: 0,
-            misc: 0,
-            nonc,
+            time: U256::zero(),
             body,
         };
         let hash = hash_block(&block);
