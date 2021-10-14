@@ -1,4 +1,6 @@
+import {ensureDir, ensureDirSync} from "https://deno.land/std/fs/mod.ts"; // FIXME: can this be local?
 import {keccak256} from "./keccak256.ts"
+//import {path from "path"
 
 // Persistence:
 // ~/.bitcons/blocks/HASH
@@ -61,13 +63,13 @@ type HNode<A> = {ctor: "HNode", value: [bigint,A], child: List<Heap<A>>}
 type Empty<A> = {ctor: "Empty"}
 type Heap<A>  = Empty<A> | HNode<A>
 
-type Slice = { work: U64, data: Bits }
+//type Slice = { work: U64, data: Bits }
 
 type PutPeers = { ctor: "PutPeers", peers: Address[] }
-type PutSlice = { ctor: "PutSlice", slice: Slice }
+//type PutSlice = { ctor: "PutSlice", slice: Slice }
 type PutBlock = { ctor: "PutBlock", block: Block }
 type AskBlock = { ctor: "AskBlock", bhash: Hash }
-type Message  = PutPeers | PutSlice | PutBlock | AskBlock
+type Message  = PutPeers | PutBlock | AskBlock
 
 type Mail = {
   sent_by: Peer
@@ -78,7 +80,7 @@ type Node = {
   port: F64
   peers: Dict<Peer>
   chain: Chain
-  slices: Heap<Slice>
+  //slices: Heap<Slice>
 }
 
 function HASH(hash: Hash) {
@@ -331,9 +333,9 @@ function hash_block(block: Block) : Hash {
   }
 }
 
-function hash_slice(slice: Slice) : Hash {
-  return hash_uint8array(bits_to_uint8array(serialize_slice(slice)));
-}
+//function hash_slice(slice: Slice) : Hash {
+  //return hash_uint8array(bits_to_uint8array(serialize_slice(slice)));
+//}
 
 // Attempts to mine a block by changing the least significant 192 bits of its
 // time until its hash is larger than a target, up to an maximum number of
@@ -362,22 +364,25 @@ function mine(block: Block, target: Nat, max_attempts: F64, node_time: U64, secr
 // ------
 
 // Fills a body with the top slices on the slice-pool
-function fill_body(body: Body, slices: Heap<string>) {
-  var i = 0
-  while (slices.ctor !== "Empty" && i < 1280 * 8) {
-    var bits : string = (heap_head(slices) || [0,""])[1]
-    console.log("got", bits);
-    for (var k = 0; k < bits.length && i < 1280 * 8; ++k, ++i) {
-      console.log("- bit_" + i + ": " + bits[k]);
-      if (bits[k] === "1") {
-        var x = Math.floor(i / 8)
-        var y = i % 8
-        body[x] = body[x] | (1 << (7 - y));
-      }
-    }
-    slices = heap_tail(slices);
-  }
-}
+//function fill_body(body: Body, slices: Heap<string>) {
+  //for (var i = 0; i < 1280; ++i) {
+    //body[i] = 0;
+  //}
+  //var i = 0
+  //while (slices.ctor !== "Empty" && i < 1280 * 8) {
+    //var bits : string = (heap_head(slices) || [0,""])[1]
+    ////console.log("got", bits);
+    //for (var k = 0; k < bits.length && i < 1280 * 8; ++k, ++i) {
+      ////console.log("- bit_" + i + ": " + bits[k]);
+      //if (bits[k] === "1") {
+        //var x = Math.floor(i / 8)
+        //var y = i % 8
+        //body[x] = body[x] | (1 << (7 - y));
+      //}
+    //}
+    //slices = heap_tail(slices);
+  //}
+//}
 
 // Chain
 // -----
@@ -624,17 +629,17 @@ function deserialize_bits(bits: Bits) : [Bits, Bits] {
   return [bits, data]
 }
 
-function serialize_slice(slice: Slice) : Bits {
-  var work = serialize_fixlen(64, slice.work);
-  var data = serialize_bits(slice.data);
-  return work + data;
-}
+//function serialize_slice(slice: Slice) : Bits {
+  //var work = serialize_fixlen(64, slice.work);
+  //var data = serialize_bits(slice.data);
+  //return work + data;
+//}
 
-function deserialize_slice(bits: Bits) : [Bits, Slice] {
-  var [bits,work] = deserialize_fixlen(64, bits);
-  var [bits,data] = deserialize_bits(bits);
-  return [bits, {work, data}];
-}
+//function deserialize_slice(bits: Bits) : [Bits, Slice] {
+  //var [bits,work] = deserialize_fixlen(64, bits);
+  //var [bits,data] = deserialize_bits(bits);
+  //return [bits, {work, data}];
+//}
 
 function serialize_uint8array(bytes: number, array: Uint8Array) : Bits {
   var bits = "";
@@ -680,34 +685,34 @@ function serialize_message(message: Message) : Bits {
   switch (message.ctor) {
     case "PutPeers":
       var peers = serialize_list(serialize_address, array_to_list(message.peers));
-      return "00" + peers;
-    case "PutSlice":
-      var slice = serialize_slice(message.slice);
-      return "10" + slice;
+      return "0000" + peers;
     case "PutBlock":
       var block = serialize_block(message.block);
-      return "01" + block;
+      return "1000" + block;
     case "AskBlock":
       var bhash = serialize_hash(message.bhash);
-      return "11" + bhash;
+      return "0100" + bhash;
+    //case "PutSlice":
+      //var slice = serialize_slice(message.slice);
+      //return "11" + slice;
   }
   return "";
 }
 
 function deserialize_message(bits: Bits) : [Bits, Message] {
-  switch (bits.slice(0,2)) {
-    case "00":
+  switch (bits.slice(0,4)) {
+    case "0000":
       var [bits, peers] = deserialize_list(deserialize_address, bits.slice(2));
       return [bits, {ctor: "PutPeers", peers: list_to_array(peers)}];
-    case "10":
-      var [bits, slice] = deserialize_slice(bits.slice(2));
-      return [bits, {ctor: "PutSlice", slice}];
-    case "01":
+    case "1000":
       var [bits, block] = deserialize_block(bits.slice(2));
       return [bits, {ctor: "PutBlock", block}];
-    case "11": 
+    case "0100": 
       var [bits, bhash] = deserialize_hash(bits.slice(2));
       return [bits, {ctor: "AskBlock", bhash}];
+    //case "11":
+      //var [bits, slice] = deserialize_slice(bits.slice(2));
+      //return [bits, {ctor: "PutSlice", slice}];
   }
   throw "Bad message deserialization."
 }
@@ -763,11 +768,11 @@ export function start_node(port: number = DEFAULT_PORT) {
     peers[serialize_address(addr)] = {seen_at: seen, address: addr}
   }
   var chain : Chain = initial_chain();
-  var slices : Heap<Slice> = {ctor: "Empty"};
-  var node : Node = { port, peers, chain, slices };
+  //var slices : Heap<Slice> = {ctor: "Empty"};
+  var node : Node = { port, peers, chain };
 
   var body : Body = EmptyBody;
-  body[0] = (port % 42000);
+  //body[0] = (port % 42000);
 
   // Initializes sockets
   var udp = udp_init(port);
@@ -807,10 +812,6 @@ export function start_node(port: number = DEFAULT_PORT) {
           node.peers[serialize_address(address)] = {seen_at: get_time(), address};
         }
         break;
-      case "PutSlice":
-        var priority = get_hash_work(hash_slice(message.slice));
-        //heap_push(node.slices, [priority, message.slice]);
-        break;
       case "PutBlock":
         //console.log("PutBlock", hash_block(message.block));
         add_block(node.chain, message.block, get_time());
@@ -830,6 +831,10 @@ export function start_node(port: number = DEFAULT_PORT) {
           //}
         }
         break;
+      //case "PutSlice":
+        //var work = get_hash_work(hash_slice(message.slice));
+        //node.slices = heap_insert([work, message.slice], node.slices);
+        //break;
     }
   }
   udp_receive(udp, handle_message)
@@ -848,7 +853,6 @@ export function start_node(port: number = DEFAULT_PORT) {
       //displayer();
     }
   }
-  setInterval(miner, 1000 / MINER_CPS);
 
   // Sends our tip block to random peers
   function gossiper() {
@@ -858,7 +862,6 @@ export function start_node(port: number = DEFAULT_PORT) {
       send(peer.address, { ctor: "PutBlock", block });
     }
   }
-  setInterval(gossiper, 1000);
 
   // Requests missing blocks
   function requester() {
@@ -873,7 +876,40 @@ export function start_node(port: number = DEFAULT_PORT) {
       //console.log("asked " + count + " pendings");
     }
   }
-  setInterval(requester, 1000 / 32);
+
+  function get_blocks_dir() {
+    var dir = Deno.env.get("HOME") + "/.ubilog/blocks"
+    ensureDirSync(dir)
+    return dir
+  }
+
+  // Saves longest chain
+  function saver() {
+    var chain = get_longest_chain(node.chain)
+    for (var i = 0; i < chain.length; ++i) {
+      var bits = serialize_block(chain[i])
+      var buff = bits_to_uint8array(bits);
+      var indx = pad_left(16, "0", i.toString(16))
+      var bdir = get_blocks_dir();
+      ensureDirSync(bdir)
+      Deno.writeFileSync(bdir+"/"+indx, buff)
+    }
+  }
+
+  // Loads saved blocks
+  function loader() {
+    var bdir = get_blocks_dir();
+    var files = Array.from(Deno.readDirSync(bdir)).sort((x,y) => x.name > y.name ? 1 : -1);
+    for (var file of files) {
+      var buff = Deno.readFileSync(bdir+"/"+file.name)
+      var [bits,block] = deserialize_block(uint8array_to_bits(buff))
+      //console.log("loaded " + file.name);
+      //console.log(hash_block(block));
+      //console.log(block);
+      add_block(node.chain, block, get_time());
+    }
+    //Deno.exit();
+  }
 
   // Displays status
   function displayer() {
@@ -908,7 +944,13 @@ export function start_node(port: number = DEFAULT_PORT) {
     console.log("");
     console.log(show_chain(node.chain, 32));
   }
+
+  loader();
+  setInterval(miner, 1000 / MINER_CPS);
+  setInterval(gossiper, 1000);
+  setInterval(requester, 1000 / 32);
   setInterval(displayer, 1000);
+  setInterval(saver, 1000 * 30);
 }
 
 //var port = Number(Deno.args[0]) || 42000;

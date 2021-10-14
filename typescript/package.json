@@ -19,6 +19,7 @@
   "homepage": "https://github.com/ubilog-org/ubilog#readme",
   "dependencies": {
     "heapify": "^0.4.0",
+    "home-dir": "^1.0.0",
     "typescript-heapify": "^1.2.0"
   }
 }
