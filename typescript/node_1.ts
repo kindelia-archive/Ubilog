@@ -1,3 +1,3 @@
-import {start_node} from "./bitcons.ts"
+import {start_node} from "./ubilog.ts"
 
 start_node(42001);

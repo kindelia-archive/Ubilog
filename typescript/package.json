@@ -1,5 +1,5 @@
 {
-  "name": "litcons",
+  "name": "ubilog",
   "version": "0.1.0",
   "description": "",
   "main": "index.js",
@@ -9,14 +9,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/litereum/litcons.git"
+    "url": "git+https://github.com/ubilog-org/ubilog.git"
   },
   "author": "",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/litereum/litcons/issues"
+    "url": "https://github.com/ubilog-org/ubilog/issues"
   },
-  "homepage": "https://github.com/litereum/litcons#readme",
+  "homepage": "https://github.com/ubilog-org/ubilog#readme",
   "dependencies": {
     "heapify": "^0.4.0",
     "typescript-heapify": "^1.2.0"
