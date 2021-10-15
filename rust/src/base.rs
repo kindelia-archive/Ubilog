@@ -36,7 +36,7 @@ pub struct Body {
     val: [u8; BODY_SIZE],
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct Block {
     prev: U256, // previous block (32 bytes)
     time: U256,
@@ -109,7 +109,7 @@ struct Node {
     port: u16,
     peers: HashMap<String, Peer>,
     chain: Chain,
-    slices: BinaryHeap<Slice>,
+    // slices: BinaryHeap<Slice>,
 }
 
 // Algorithms
@@ -213,16 +213,56 @@ fn hash_block(block: &Block) -> U256 {
     U256::from_little_endian(&hash)
 }
 
-fn hash_slice(slice: &Slice) -> U256 {
-    let mut hasher = sha3::Keccak256::new();
+// fn hash_slice(slice: &Slice) -> U256 {
+//     let mut hasher = sha3::Keccak256::new();
 
-    let buf = slice.work.to_le_bytes();
-    hasher.update(&buf);
-    let buf = slice.data[..].as_slice();
-    hasher.update(&buf);
+//     let buf = slice.work.to_le_bytes();
+//     hasher.update(&buf);
+//     let buf = slice.data[..].as_slice();
+//     hasher.update(&buf);
 
-    let hash = hasher.finalize();
-    U256::from_little_endian(&hash)
+//     let hash = hasher.finalize();
+//     U256::from_little_endian(&hash)
+// }
+
+struct MiningIterator {
+    block_template: Block,
+    target: Nat,
+    secret_key: Nat,
+    node_time: Nat,
+    max_attempts: u64,
+    attempt: u64,
+}
+
+impl Iterator for MiningIterator {
+    type Item = Block;
+    fn next(&mut self) -> Option<Block> {
+        if self.attempt < self.max_attempts {
+            self.attempt += 1;
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            let rand_0 = rng.gen::<u32>();
+            let rand_1 = rng.gen::<u32>();
+        }
+        None
+    }
+}
+
+fn mine(
+    block: &Block,
+    target: Nat,
+    max_attempts: u64,
+    node_time: u64,
+    secret_key: &U256,
+) -> MiningIterator {
+    MiningIterator {
+        block_template: block.clone(),
+        target: target,
+        secret_key: nat_from_u256(&secret_key),
+        node_time: Nat::from(node_time),
+        max_attempts: max_attempts,
+        attempt: 0u64,
+    }
 }
 
 // Tests
