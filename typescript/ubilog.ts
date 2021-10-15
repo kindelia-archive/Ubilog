@@ -1,3 +1,4 @@
+// deno-lint-ignore-file camelcase
 import {ensureDir, ensureDirSync} from "https://deno.land/std/fs/mod.ts"; // FIXME: can this be local?
 import {keccak256} from "./keccak256.ts"
 //import {path from "path"
@@ -346,12 +347,12 @@ function hash_block(block: Block) : Hash {
 // 192-bit key, plus the random number used to generate the low bits.
 function mine(block: Block, target: Nat, max_attempts: F64, node_time: U64, secret_key: U256 = 0n) : Block | null {
   for (var i = 0n; i < max_attempts; ++i) {
-    var [rand_0, rand_1] = crypto.getRandomValues(new Uint32Array(2));
-    var nonce = (secret_key << 64n) | (BigInt(rand_0) | 32n) | BigInt(rand_1);
-    var bits = BigInt(hash_uint8array(u256_to_uint8array(nonce))) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFn
-    var time = (node_time << 192n) | bits;
-    var block = {...block, time}
-    var hash = hash_block(block);
+    const [rand_0, rand_1] = crypto.getRandomValues(new Uint32Array(2));
+    const nonce = (secret_key << 64n) | (BigInt(rand_0) << 32n) | BigInt(rand_1);
+    const bits = BigInt(hash_uint8array(u256_to_uint8array(nonce))) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFn
+    const time = (node_time << 192n) | bits;
+    block = {...block, time}
+    const hash = hash_block(block);
     if (BigInt(hash) > target) {
       //console.log("nice", hash, target);
       return block
