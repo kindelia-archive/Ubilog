@@ -1,0 +1,11 @@
+{
+  "fmt": {
+    "files": {
+      "include": ["typescript/*.ts"]
+    },
+    "options": {
+      "lineWidth": 100,
+      "indentWidth": 2
+    }
+  }
+}

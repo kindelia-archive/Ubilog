@@ -1,4 +1,3 @@
-
 # Ubilog – Typescript Implementation
 
 ## Requirements
