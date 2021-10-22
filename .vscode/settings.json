@@ -1,0 +1,13 @@
+{
+    "deno.enable": true,
+    "deno.lint": true,
+    "deno.unstable": true,
+    "cSpell.words": [
+        "bhash",
+        "btime",
+        "displayer",
+        "hashrate",
+        "phash",
+        "Ubilog"
+    ]
+}

@@ -1,7 +1,6 @@
 // deno-lint-ignore-file camelcase no-inferrable-types
-import { ensureDirSync } from "https://deno.land/std/fs/mod.ts"; // FIXME: can this be local?
+import { ensureDirSync } from "https://deno.land/std/fs/mod.ts"; // TODO: can this be local?
 import { keccak256 } from "./keccak256.ts";
-//import {path from "path"
 
 // Persistence:
 // ~/.ubilog/blocks/HASH
@@ -213,7 +212,7 @@ function bits_to_uint8array(bits: Bits): Uint8Array {
     }
     return buff;
   }
-  throw new Error("bitstring too large");
+  throw new Error("bit string too large");
 }
 
 function uint8array_to_bits(buff: Uint8Array): Bits {
@@ -544,27 +543,27 @@ function show_chain(chain: Chain, _lines: number) {
 // Serialization
 // -------------
 
-function serialize_fixlen(size: F64, value: Nat): Bits {
+function serialize_fixed_len(size: F64, value: Nat): Bits {
   if (size > 0) {
     const head = (value % 2n) === 0n ? "0" : "1";
-    const tail = serialize_fixlen(size - 1, value / 2n);
+    const tail = serialize_fixed_len(size - 1, value / 2n);
     return head + tail;
   } else {
     return "";
   }
 }
 
-function deserialize_fixlen(size: F64, bits: Bits): [Bits, Nat] {
+function deserialize_fixed_len(size: F64, bits: Bits): [Bits, Nat] {
   if (size === 0) {
     return [bits, 0n];
   } else {
     if (bits[0] === "0") {
       let x;
-      [bits, x] = deserialize_fixlen(size - 1, bits.slice(1));
+      [bits, x] = deserialize_fixed_len(size - 1, bits.slice(1));
       return [bits, x * 2n];
     } else if (bits[0] === "1") {
       let x;
-      [bits, x] = deserialize_fixlen(size - 1, bits.slice(1));
+      [bits, x] = deserialize_fixed_len(size - 1, bits.slice(1));
       return [bits, x * 2n + 1n];
     } else {
       return ["", 0n];
@@ -600,11 +599,11 @@ function deserialize_list<T>(
 function serialize_address(address: Address): Bits {
   switch (address.ctor) {
     case "IPv4": {
-      const val0 = serialize_fixlen(8, BigInt(address.val0));
-      const val1 = serialize_fixlen(8, BigInt(address.val1));
-      const val2 = serialize_fixlen(8, BigInt(address.val2));
-      const val3 = serialize_fixlen(8, BigInt(address.val3));
-      const port = serialize_fixlen(16, BigInt(address.port));
+      const val0 = serialize_fixed_len(8, BigInt(address.val0));
+      const val1 = serialize_fixed_len(8, BigInt(address.val1));
+      const val2 = serialize_fixed_len(8, BigInt(address.val2));
+      const val3 = serialize_fixed_len(8, BigInt(address.val3));
+      const port = serialize_fixed_len(16, BigInt(address.port));
       return "0" + val0 + val1 + val2 + val3 + port;
     }
   }
@@ -614,11 +613,11 @@ function serialize_address(address: Address): Bits {
 function deserialize_address(bits: Bits): [Bits, Address] {
   if (bits[0] === "0") {
     let val0, val1, val2, val3, port;
-    [bits, val0] = deserialize_fixlen(8, bits.slice(1));
-    [bits, val1] = deserialize_fixlen(8, bits);
-    [bits, val2] = deserialize_fixlen(8, bits);
-    [bits, val3] = deserialize_fixlen(8, bits);
-    [bits, port] = deserialize_fixlen(16, bits);
+    [bits, val0] = deserialize_fixed_len(8, bits.slice(1));
+    [bits, val1] = deserialize_fixed_len(8, bits);
+    [bits, val2] = deserialize_fixed_len(8, bits);
+    [bits, val3] = deserialize_fixed_len(8, bits);
+    [bits, port] = deserialize_fixed_len(16, bits);
     return [
       bits,
       {
@@ -636,25 +635,25 @@ function deserialize_address(bits: Bits): [Bits, Address] {
 }
 
 function serialize_bits(data: Bits): Bits {
-  const size = serialize_fixlen(16, BigInt(data.length));
+  const size = serialize_fixed_len(16, BigInt(data.length));
   return size + data;
 }
 
-function deserialize_bits(bits: Bits): [Bits, Bits] {
-  let size, data;
-  [bits, size] = deserialize_fixlen(16, bits);
-  [bits, data] = [bits.slice(Number(size)), bits.slice(0, Number(size))];
-  return [bits, data];
-}
+//function deserialize_bits(bits: Bits): [Bits, Bits] {
+//  let size, data;
+//  [bits, size] = deserialize_fixed_len(16, bits);
+//  [bits, data] = [bits.slice(Number(size)), bits.slice(0, Number(size))];
+//  return [bits, data];
+//}
 
 //function serialize_slice(slice: Slice) : Bits {
-//var work = serialize_fixlen(64, slice.work);
+//var work = serialize_fixed_len(64, slice.work);
 //var data = serialize_bits(slice.data);
 //return work + data;
 //}
 
 //function deserialize_slice(bits: Bits) : [Bits, Slice] {
-//var [bits,work] = deserialize_fixlen(64, bits);
+//var [bits,work] = deserialize_fixed_len(64, bits);
 //var [bits,data] = deserialize_bits(bits);
 //return [bits, {work, data}];
 //}
@@ -662,7 +661,7 @@ function deserialize_bits(bits: Bits): [Bits, Bits] {
 function serialize_uint8array(bytes: number, array: Uint8Array): Bits {
   let bits = "";
   for (let i = 0; i < bytes; ++i) {
-    bits += serialize_fixlen(8, BigInt(array[i]));
+    bits += serialize_fixed_len(8, BigInt(array[i]));
   }
   return bits;
 }
@@ -671,25 +670,25 @@ function deserialize_uint8array(bytes: number, bits: Bits): [Bits, Uint8Array] {
   const vals = [];
   for (let i = 0; i < bytes; ++i) {
     let val;
-    [bits, val] = deserialize_fixlen(8, bits);
+    [bits, val] = deserialize_fixed_len(8, bits);
     vals.push(Number(val));
   }
   return [bits, new Uint8Array(vals)];
 }
 
 function serialize_hash(hash: Hash): Bits {
-  return serialize_fixlen(256, BigInt(HASH(hash)));
+  return serialize_fixed_len(256, BigInt(HASH(hash)));
 }
 
 function deserialize_hash(bits: Bits): [Bits, Hash] {
   let nat;
-  [bits, nat] = deserialize_fixlen(256, bits);
+  [bits, nat] = deserialize_fixed_len(256, bits);
   return [bits, HASH("0x" + pad_left(64, "0", nat.toString(16)))];
 }
 
 function serialize_block(block: Block): Bits {
   const prev = serialize_hash(block.prev);
-  const time = serialize_fixlen(256, block.time);
+  const time = serialize_fixed_len(256, block.time);
   const body = serialize_uint8array(1280, block.body);
   return prev + time + body;
 }
@@ -697,7 +696,7 @@ function serialize_block(block: Block): Bits {
 function deserialize_block(bits: Bits): [Bits, Block] {
   let prev, time, body;
   [bits, prev] = deserialize_hash(bits);
-  [bits, time] = deserialize_fixlen(256, bits);
+  [bits, time] = deserialize_fixed_len(256, bits);
   [bits, body] = deserialize_uint8array(1280, bits);
   return [bits, { prev, time, body }];
 }
@@ -755,20 +754,28 @@ function deserialize_message(bits: Bits): [Bits, Message] {
 
 const DEFAULT_PORT: number = 16936;
 
-function address_to_deno(address: Address) {
-  return { transport: "udp", hostname: get_address_hostname(address), port: address.port };
+function address_to_deno(address: Address): Deno.Addr {
+  return {
+    transport: "udp",
+    hostname: get_address_hostname(address),
+    port: address.port,
+  };
 }
 
-function deno_to_address(deno: any): Address {
-  const [val0, val1, val2, val3] = deno.hostname.split(".");
-  return {
-    ctor: "IPv4",
-    val0: Number(val0),
-    val1: Number(val1),
-    val2: Number(val2),
-    val3: Number(val3),
-    port: Number(deno.port),
-  };
+function deno_to_address(deno_addr: Deno.Addr): Address {
+  if (deno_addr.transport === "udp") {
+    const [val0, val1, val2, val3] = deno_addr.hostname.split(".");
+    return {
+      ctor: "IPv4",
+      val0: Number(val0),
+      val1: Number(val1),
+      val2: Number(val2),
+      val3: Number(val3),
+      port: Number(deno_addr.port),
+    };
+  } else {
+    throw new Error(`Invalid UDP address: ${deno_addr}`);
+  }
 }
 
 function udp_init(port: number = DEFAULT_PORT) {
@@ -776,16 +783,22 @@ function udp_init(port: number = DEFAULT_PORT) {
   return Deno.listenDatagram({ port, transport: "udp" });
 }
 
-function udp_send(udp: any, address: Address, message: Message) {
+function udp_send(udp: Deno.DatagramConn, address: Address, message: Message) {
   //console.log("send", address, message);
-  udp.send(bits_to_uint8array(serialize_message(message)), address_to_deno(address));
+  udp.send(
+    bits_to_uint8array(serialize_message(message)),
+    address_to_deno(address)
+  );
 }
 
-function udp_receive<T>(udp: any, callback: (address: Address, message: Message) => T) {
+function udp_receive<T>(
+  udp: Deno.DatagramConn,
+  callback: (address: Address, message: Message) => T
+) {
   setTimeout(async () => {
-    for await (const [buff, deno] of udp) {
+    for await (const [buff, deno_addr] of udp) {
       let bits = uint8array_to_bits(buff);
-      const addr = deno_to_address(deno);
+      const addr = deno_to_address(deno_addr);
       let msg;
       [bits, msg] = deserialize_message(bits);
       callback(addr, msg);
@@ -819,14 +832,14 @@ export function start_node(port: number = DEFAULT_PORT) {
   const udp = udp_init(port);
 
   // TODO: improve performance
-  function random_peers(count: number): Array<Peer> {
-    const keys = Object.keys(node.peers);
-    const peers = [];
-    for (let i = 0; i < count; ++i) {
-      peers.push(node.peers[keys[keys.length * Math.random() << 0]]);
-    }
-    return peers;
-  }
+  //function random_peers(count: number): Array<Peer> {
+  //  const keys = Object.keys(node.peers);
+  //  const peers = [];
+  //  for (let i = 0; i < count; ++i) {
+  //    peers.push(node.peers[keys[keys.length * Math.random() << 0]]);
+  //  }
+  //  return peers;
+  //}
 
   // Returns the current time
   // TODO: get peers median?
@@ -1004,19 +1017,24 @@ export function start_node(port: number = DEFAULT_PORT) {
 //var port = Number(Deno.args[0]) || 42000;
 //start_node(port);
 
-function test_0() {
-  const block_0 = mine({...BlockZero, prev: HashZero           }, compute_target(1000n), 999999, BigInt(Date.now())) || BlockZero;
-  const block_1 = mine({...BlockZero, prev: hash_block(block_0)}, compute_target(1000n), 999999, BigInt(Date.now())) || BlockZero;
-  const block_2 = mine({...BlockZero, prev: hash_block(block_1)}, compute_target(1000n), 999999, BigInt(Date.now())) || BlockZero;
-
-  const chain = initial_chain();
-  add_block(chain, block_0, BigInt(Date.now()));
-  add_block(chain, block_1, BigInt(Date.now()));
-  add_block(chain, block_2, BigInt(Date.now()));
-  console.log(show_chain(chain, 8));
-
-  console.log(serialize_block(block_2));
-}
+//function test_0() {
+//  const target = compute_target(1000n);
+//  const max_attempts = 999999;
+//  const do_mine = (prev: Hash) =>
+//    mine({ ...BlockZero, prev }, target, max_attempts, BigInt(Date.now())) ||
+//    BlockZero;
+//  const block_0 = do_mine(HashZero);
+//  const block_1 = do_mine(hash_block(block_0));
+//  const block_2 = do_mine(hash_block(block_1));
+//
+//  const chain = initial_chain();
+//  add_block(chain, block_0, BigInt(Date.now()));
+//  add_block(chain, block_1, BigInt(Date.now()));
+//  add_block(chain, block_2, BigInt(Date.now()));
+//  console.log(show_chain(chain, 8));
+//
+//  console.log(serialize_block(block_2));
+//}
 //test_0();
 
 //start_node(42000);
