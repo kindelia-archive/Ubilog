@@ -809,6 +809,12 @@ function udp_receive<T>(
 // Node
 // ----
 
+const DEFAULT_CONFIG_FILE = `
+{
+  "peers": ["127.0.0.1:42000", "127.0.0.1:42001", "127.0.0.1:42002"]
+}
+`
+
 export function start_node(port: number = DEFAULT_PORT) {
   const MINER_CPS = 16;
   const MINER_HASHRATE = 1024;
@@ -937,11 +943,36 @@ export function start_node(port: number = DEFAULT_PORT) {
       //console.log("asked " + count + " pendings");
     }
   }
+  
+  function get_dir(path: string = "") {
+    const dir = Deno.env.get("HOME") + `/.ubilog/${path}`;
+    ensureDirSync(dir);
+    return dir;
+  }
 
   function get_blocks_dir() {
     const dir = Deno.env.get("HOME") + "/.ubilog/blocks";
     ensureDirSync(dir);
     return dir;
+  }
+
+  function load_config(): string {
+    const base_dir = get_dir();
+    const config_path = `${base_dir}/config`;
+    // TODO extract "ensure_file" function
+    try {
+      Deno.statSync(config_path);
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) {
+        Deno.writeTextFileSync(config_path, DEFAULT_CONFIG_FILE);
+      } else {
+        throw err;
+      }
+    }
+
+    const config_file = Deno.readTextFileSync(config_path);
+    const config_data = JSON.parse(config_file);
+    return config_data;
   }
 
   // Saves longest chain
@@ -1006,6 +1037,8 @@ export function start_node(port: number = DEFAULT_PORT) {
     console.log(show_chain(node.chain, 32));
   }
 
+  const config = load_config()
+  console.log(config);
   loader();
   setInterval(miner, 1000 / MINER_CPS);
   setInterval(gossiper, 1000);
