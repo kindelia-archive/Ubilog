@@ -1,5 +1,5 @@
 // deno-lint-ignore-file camelcase no-inferrable-types
-import { ensureDirSync } from "https://deno.land/std/fs/mod.ts"; // TODO: can this be local?
+import { ensureDirSync } from "https://deno.land/std@0.112.0/fs/mod.ts"; // TODO: can this be local?
 import { keccak256 } from "./keccak256.ts";
 import { is_json_array, is_json_object, JSONValue } from "./json.ts";
 
