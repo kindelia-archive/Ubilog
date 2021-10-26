@@ -2,6 +2,7 @@
     "deno.enable": true,
     "deno.lint": true,
     "deno.unstable": true,
+    "deno.config": "typescript/deno.json",
     "cSpell.words": [
         "bhash",
         "btime",

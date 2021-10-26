@@ -1,12 +1,12 @@
 // deno-lint-ignore-file camelcase no-inferrable-types
 import { ensureDirSync } from "https://deno.land/std/fs/mod.ts"; // TODO: can this be local?
 import { keccak256 } from "./keccak256.ts";
+import { is_json_array, is_json_object, JSONValue } from "./json.ts";
 
 // Persistence:
 // ~/.ubilog/blocks/HASH
 // ~/.ubilog/longest
 // ~/.ubilog/to_mine
-// ~/.ubilog/peers
 // TODO
 
 // Types
@@ -96,6 +96,12 @@ function HASH(hash: Hash) {
 
 // Algorithms
 // ==========
+
+// Util
+
+function now(): bigint {
+  return BigInt(Date.now());
+}
 
 // Numbers
 // -------
@@ -778,8 +784,39 @@ function deno_to_address(deno_addr: Deno.Addr): Address {
   }
 }
 
+function string_to_address(address: string): Address {
+  // TODO IPv6
+  const [ip_txt, port_txt] = address.split(":");
+  let port: number = DEFAULT_PORT;
+  if (port_txt == undefined) {
+    port = DEFAULT_PORT;
+  } else {
+    port = Number(port_txt);
+    if (isNaN(port)) {
+      throw new Error(`invalid port: ${port_txt}`);
+    }
+  }
+  const [val0_txt, val1_txt, val2_txt, val3_txt] = ip_txt.split(".");
+  const val0 = Number(val0_txt);
+  const val1 = Number(val1_txt);
+  const val2 = Number(val2_txt);
+  const val3 = Number(val3_txt);
+  const valid_val = (port: number) => !isNaN(port) && port >= 0 && port <= 255;
+  if (!valid_val(val0) || !valid_val(val1) || !valid_val(val2) || !valid_val(val3)) {
+    throw new Error(`invalid address: ${ip_txt}`);
+  }
+  return {
+    ctor: "IPv4",
+    val0: val0,
+    val1: val1,
+    val2: val2,
+    val3: val3,
+    port: port,
+  };
+}
+
 function udp_init(port: number = DEFAULT_PORT) {
-  console.log("init", port);
+  //console.log("init", port);
   return Deno.listenDatagram({ port, transport: "udp" });
 }
 
@@ -787,13 +824,13 @@ function udp_send(udp: Deno.DatagramConn, address: Address, message: Message) {
   //console.log("send", address, message);
   udp.send(
     bits_to_uint8array(serialize_message(message)),
-    address_to_deno(address)
+    address_to_deno(address),
   );
 }
 
 function udp_receive<T>(
   udp: Deno.DatagramConn,
-  callback: (address: Address, message: Message) => T
+  callback: (address: Address, message: Message) => T,
 ) {
   setTimeout(async () => {
     for await (const [buff, deno_addr] of udp) {
@@ -813,20 +850,66 @@ const DEFAULT_CONFIG_FILE = `
 {
   "peers": ["127.0.0.1:42000", "127.0.0.1:42001", "127.0.0.1:42002"]
 }
-`
+`;
+
+function ensure_text_file(path: string, content: string = "") {
+  try {
+    const stat = Deno.statSync(path);
+    // TODO handle symlink?
+    if (!stat.isFile) {
+      throw new Error(`'${path}' exists but is not a file.`);
+    }
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) {
+      Deno.writeTextFileSync(path, content);
+    } else {
+      throw err;
+    }
+  }
+}
 
 export function start_node(port: number = DEFAULT_PORT) {
   const MINER_CPS = 16;
   const MINER_HASHRATE = 1024;
   let MINED = 0;
 
-  // Initializes the node
-  const peers: Dict<Peer> = {};
-  for (const peer_port of [42000, 42001, 42002]) {
-    const addr: Address = { ctor: "IPv4", val0: 127, val1: 0, val2: 0, val3: 1, port: peer_port };
-    const seen: Nat = BigInt(Date.now());
-    peers[serialize_address(addr)] = { seen_at: seen, address: addr };
+  // Loads config
+
+  function load_config(): JSONValue {
+    const base_dir = get_dir();
+    const config_path = `${base_dir}/config`;
+    ensure_text_file(config_path, DEFAULT_CONFIG_FILE);
+    const config_file = Deno.readTextFileSync(config_path);
+    const config_data = JSON.parse(config_file);
+    return config_data;
   }
+
+  const peers: Dict<Peer> = {};
+
+  const config = load_config();
+
+  // TODO separate config parsing
+  if (is_json_object(config)) {
+    for (const key in config) {
+      if (key === "peers") {
+        const peers_txt = config[key];
+        if (is_json_array(peers_txt)) {
+          for (const peer_txt of peers_txt) {
+            if (typeof peer_txt === "string") {
+              const addr = string_to_address(peer_txt);
+              const seen = now();
+              peers[serialize_address(addr)] = { seen_at: seen, address: addr };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Initializes the node
+
+  //console.log(peers);
+
   const chain: Chain = initial_chain();
   //var slices : Heap<Slice> = {ctor: "Empty"};
   const node: Node = { port, peers, chain };
@@ -850,7 +933,7 @@ export function start_node(port: number = DEFAULT_PORT) {
   // Returns the current time
   // TODO: get peers median?
   function get_time(): U64 {
-    return BigInt(Date.now());
+    return now();
   }
 
   function send(to: Address, message: Message) {
@@ -869,7 +952,10 @@ export function start_node(port: number = DEFAULT_PORT) {
       case "PutPeers":
         //console.log("PutPeers", message.peers.length);
         for (const address of message.peers) {
-          node.peers[serialize_address(address)] = { seen_at: get_time(), address };
+          node.peers[serialize_address(address)] = {
+            seen_at: get_time(),
+            address,
+          };
         }
         break;
       case "PutBlock":
@@ -943,7 +1029,7 @@ export function start_node(port: number = DEFAULT_PORT) {
       //console.log("asked " + count + " pendings");
     }
   }
-  
+
   function get_dir(path: string = "") {
     const dir = Deno.env.get("HOME") + `/.ubilog/${path}`;
     ensureDirSync(dir);
@@ -954,25 +1040,6 @@ export function start_node(port: number = DEFAULT_PORT) {
     const dir = Deno.env.get("HOME") + "/.ubilog/blocks";
     ensureDirSync(dir);
     return dir;
-  }
-
-  function load_config(): string {
-    const base_dir = get_dir();
-    const config_path = `${base_dir}/config`;
-    // TODO extract "ensure_file" function
-    try {
-      Deno.statSync(config_path);
-    } catch (err) {
-      if (err instanceof Deno.errors.NotFound) {
-        Deno.writeTextFileSync(config_path, DEFAULT_CONFIG_FILE);
-      } else {
-        throw err;
-      }
-    }
-
-    const config_file = Deno.readTextFileSync(config_path);
-    const config_data = JSON.parse(config_file);
-    return config_data;
   }
 
   // Saves longest chain
@@ -1007,7 +1074,7 @@ export function start_node(port: number = DEFAULT_PORT) {
   function displayer() {
     const targ = node.chain.target[node.chain.tip[1]];
     const diff = compute_difficulty(targ);
-    const rate = diff * 1000n / TIME_PER_BLOCK;
+    const rate = (diff * 1000n) / TIME_PER_BLOCK;
     const pendings = node.chain.pending;
     let pending_size = 0;
     let pending_seen = 0;
@@ -1022,10 +1089,24 @@ export function start_node(port: number = DEFAULT_PORT) {
     console.log("======");
     console.log("");
     console.log("- current_time  : " + get_time() + " UTC");
-    console.log("- online_peers  : " + Object.keys(node.peers).length + " peers");
-    console.log("- chain_height  : " + get_longest_chain(node.chain).length + " blocks");
-    console.log("- database      : " + (Object.keys(node.chain.block).length - 1) + " blocks");
-    console.log("- pending       : " + pending_size + " blocks (" + pending_seen + " downloaded)");
+    console.log(
+      "- online_peers  : " + Object.keys(node.peers).length + " peers",
+    );
+    console.log(
+      "- chain_height  : " + get_longest_chain(node.chain).length + " blocks",
+    );
+    console.log(
+      "- database      : " +
+        (Object.keys(node.chain.block).length - 1) +
+        " blocks",
+    );
+    console.log(
+      "- pending       : " +
+        pending_size +
+        " blocks (" +
+        pending_seen +
+        " downloaded)",
+    );
     console.log("- total_mined   : " + MINED + " blocks");
     console.log("- own_hash_rate : " + MINER_HASHRATE + " hashes / second");
     console.log("- net_hash_rate : " + rate + " hashes / second");
@@ -1037,8 +1118,6 @@ export function start_node(port: number = DEFAULT_PORT) {
     console.log(show_chain(node.chain, 32));
   }
 
-  const config = load_config()
-  console.log(config);
   loader();
   setInterval(miner, 1000 / MINER_CPS);
   setInterval(gossiper, 1000);
