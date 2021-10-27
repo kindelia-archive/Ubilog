@@ -4,6 +4,7 @@
     "deno.unstable": true,
     "deno.config": "typescript/deno.json",
     "cSpell.words": [
+        "bdir",
         "bhash",
         "btime",
         "displayer",

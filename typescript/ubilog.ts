@@ -3,11 +3,14 @@ import { ensureDirSync } from "https://deno.land/std@0.112.0/fs/mod.ts"; // TODO
 import { keccak256 } from "./keccak256.ts";
 import { is_json_array, is_json_object, JSONValue } from "./json.ts";
 
+// Configuration:
+// ~/.ubilog/config
+// ~/.ubilog/secret_key
 // Persistence:
-// ~/.ubilog/blocks/HASH
-// ~/.ubilog/longest
-// ~/.ubilog/to_mine
-// TODO
+// TODO ~/.ubilog/to_mine
+// TODO ~/.ubilog/blocks/HASH
+// TODO ~/.ubilog/mined/HASH
+// TODO ~/.ubilog/longest
 
 // Types
 // =====
@@ -341,19 +344,20 @@ function mine(
   max_attempts: F64,
   node_time: U64,
   secret_key: U256 = 0n,
-): Block | null {
-  // TODO return rands
+): [Block, U64] | null {
   for (let i = 0n; i < max_attempts; ++i) {
     const [rand_0, rand_1] = crypto.getRandomValues(new Uint32Array(2));
-    const nonce = (secret_key << 64n) | (BigInt(rand_0) << 32n) | BigInt(rand_1);
+    const rand = BigInt(rand_0) | (BigInt(rand_1) << 32n)
+    const nonce = (secret_key << 64n) | rand;
     const bits = BigInt(hash_uint8array(u256_to_uint8array(nonce))) &
       0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFn;
+    // TODO trim 64 bits on `node_time`
     const time = (node_time << 192n) | bits;
     block = { ...block, time };
     const hash = hash_block(block);
     if (BigInt(hash) > target) {
       //console.log("nice", hash, target);
-      return block;
+      return [block, rand];
     }
   }
   return null;
@@ -431,6 +435,7 @@ function add_block(chain: Chain, block: Block, time: U64) {
       if (chain.block[bhash] === undefined) {
         const phash = block.prev;
         // If previous block is available, add the block
+        // TODO extract to add mined block?
         if (chain.block[phash] !== undefined) {
           const work = get_hash_work(bhash);
           // const ptime = chain.block
@@ -447,7 +452,6 @@ function add_block(chain: Chain, block: Block, time: U64) {
             if (phash !== HashZero) {
               chain.height[bhash] = chain.height[phash] + 1n;
             }
-
             if (chain.height[bhash] > 0n && chain.height[bhash] % BLOCKS_PER_PERIOD === 0n) {
               let checkpoint_hash = phash;
               for (let i = 0n; i < BLOCKS_PER_PERIOD - 1n; ++i) {
@@ -992,7 +996,7 @@ export function start_node(port: number = DEFAULT_PORT) {
     // const tip_block = node.chain.block[tip_hash];
     const tip_target = node.chain.target[tip_hash];
     const max_hashes = MINER_HASHRATE / MINER_CPS;
-    const new_block = mine(
+    const mined = mine(
       { ...BlockZero, body, prev: tip_hash },
       tip_target,
       max_hashes,
@@ -1000,9 +1004,16 @@ export function start_node(port: number = DEFAULT_PORT) {
       0n,
     );
     //console.log("[miner] Difficulty: " + compute_difficulty(tip_target) + " hashes/block. Power: " + max_hashes + " hashes.");
-    if (new_block !== null) {
+    if (mined !== null) {
+      const [new_block, rand] = mined;
       MINED += 1;
       add_block(node.chain, new_block, get_time());
+
+      const bhash = hash_block(new_block);
+      const dir = get_dir("mined");
+      const rand_txt = pad_left(64/8*2, "0", rand.toString(16));
+      // TODO one folder per key?
+      Deno.writeTextFileSync(dir + "/" + bhash, rand_txt);
       //displayer();
     }
   }
@@ -1036,11 +1047,11 @@ export function start_node(port: number = DEFAULT_PORT) {
     return dir;
   }
 
-  function get_blocks_dir() {
-    const dir = Deno.env.get("HOME") + "/.ubilog/blocks";
-    ensureDirSync(dir);
-    return dir;
-  }
+  //function get_blocks_dir() {
+  //  const dir = Deno.env.get("HOME") + "/.ubilog/blocks";
+  //  ensureDirSync(dir);
+  //  return dir;
+  //}
 
   // Saves longest chain
   function saver() {
@@ -1049,15 +1060,14 @@ export function start_node(port: number = DEFAULT_PORT) {
       const bits = serialize_block(chain[i]);
       const buff = bits_to_uint8array(bits);
       const indx = pad_left(16, "0", i.toString(16));
-      const bdir = get_blocks_dir();
-      ensureDirSync(bdir);
+      const bdir = get_dir("blocks");
       Deno.writeFileSync(bdir + "/" + indx, buff);
     }
   }
 
   // Loads saved blocks
   function loader() {
-    const bdir = get_blocks_dir();
+    const bdir = get_dir("blocks");
     const files = Array.from(Deno.readDirSync(bdir)).sort((x, y) => x.name > y.name ? 1 : -1);
     for (const file of files) {
       const buff = Deno.readFileSync(bdir + "/" + file.name);
