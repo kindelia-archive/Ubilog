@@ -7,10 +7,10 @@ import { is_json_array, is_json_object, JSONValue } from "./json.ts";
 // ~/.ubilog/config
 // ~/.ubilog/secret_key
 // Persistence:
-// TODO ~/.ubilog/to_mine
-// TODO ~/.ubilog/blocks/HASH
-// TODO ~/.ubilog/mined/HASH
-// TODO ~/.ubilog/longest
+// ~/.ubilog/to_mine
+// ~/.ubilog/blocks/HASH
+// TODO ~/.ubilog/longest ?
+// ~/.ubilog/mined/HASH
 
 // Types
 // =====
@@ -368,14 +368,14 @@ function mine(
 
 // Fills a body with the top slices on the slice-pool
 //function fill_body(body: Body, slices: Heap<string>) {
-//for (var i = 0; i < 1280; ++i) {
+//for (var i = 0; i < BODY_SIZE; ++i) {
 //body[i] = 0;
 //}
 //var i = 0
-//while (slices.ctor !== "Empty" && i < 1280 * 8) {
+//while (slices.ctor !== "Empty" && i < BODY_SIZE * 8) {
 //var bits : string = (heap_head(slices) || [0,""])[1]
 ////console.log("got", bits);
-//for (var k = 0; k < bits.length && i < 1280 * 8; ++k, ++i) {
+//for (var k = 0; k < bits.length && i < BODY_SIZE * 8; ++k, ++i) {
 ////console.log("- bit_" + i + ": " + bits[k]);
 //if (bits[k] === "1") {
 //var x = Math.floor(i / 8)
@@ -405,7 +405,10 @@ const TIME_PER_PERIOD: Nat = TIME_PER_BLOCK * BLOCKS_PER_PERIOD;
 // initial target of 256 hashes per block
 const INITIAL_TARGET: Nat = compute_target(256n);
 
-const EmptyBody: Body = new Uint8Array(1280);
+
+const BODY_SIZE = 1280;
+
+const EmptyBody: Body = new Uint8Array(BODY_SIZE);
 
 const BlockZero: Block = {
   prev: HashZero,
@@ -699,7 +702,7 @@ function deserialize_hash(bits: Bits): [Bits, Hash] {
 function serialize_block(block: Block): Bits {
   const prev = serialize_hash(block.prev);
   const time = serialize_fixed_len(256, block.time);
-  const body = serialize_uint8array(1280, block.body);
+  const body = serialize_uint8array(BODY_SIZE, block.body);
   return prev + time + body;
 }
 
@@ -707,7 +710,7 @@ function deserialize_block(bits: Bits): [Bits, Block] {
   let prev, time, body;
   [bits, prev] = deserialize_hash(bits);
   [bits, time] = deserialize_fixed_len(256, bits);
-  [bits, body] = deserialize_uint8array(1280, bits);
+  [bits, body] = deserialize_uint8array(BODY_SIZE, bits);
   return [bits, { prev, time, body }];
 }
 
@@ -918,7 +921,7 @@ export function start_node(port: number = DEFAULT_PORT) {
   //var slices : Heap<Slice> = {ctor: "Empty"};
   const node: Node = { port, peers, chain };
 
-  const body: Body = EmptyBody;
+  let body: Body = EmptyBody;
   //body[0] = (port % 42000);
 
   // Initializes sockets
@@ -1077,6 +1080,26 @@ export function start_node(port: number = DEFAULT_PORT) {
       //console.log(block);
       add_block(node.chain, block, get_time());
     }
+    
+    const to_mine_dir = get_dir("to_mine");
+    const to_mine_files =
+      Array.from(Deno.readDirSync(to_mine_dir)).sort((x, y) => x.name > y.name ? 1 : -1);
+    for (const file of to_mine_files) {
+      const path = to_mine_dir + "/" + file.name;
+      let buff = Deno.readFileSync(path);
+      if (buff.length > BODY_SIZE) {
+        throw new Error(`Block body file '${path}' is bigger than ${BODY_SIZE} bytes.'`)
+      } else {
+        const old_buff = buff;
+        buff = new Uint8Array(BODY_SIZE)
+        buff.set(old_buff);
+      }
+      console.log(buff);
+      body = buff;
+      // TODO multiple files
+      break;
+    }
+
     //Deno.exit();
   }
 
