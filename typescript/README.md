@@ -16,5 +16,5 @@
 
 ```
 cd ./typescript
-deno run --unstable --allow-all node_0.ts
+deno run --unstable --allow-all ./src/node_0.ts
 ```
