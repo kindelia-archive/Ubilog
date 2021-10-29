@@ -1,7 +1,10 @@
 // deno-lint-ignore-file camelcase no-inferrable-types
-import { ensureDirSync } from "https://deno.land/std@0.112.0/fs/mod.ts"; // TODO: can this be local?
+import { ensureDirSync } from "https://deno.land/std@0.113.0/fs/mod.ts"; // TODO: can this be local?
+import { parse as parse_args } from "https://deno.land/std@0.113.0/flags/mod.ts";
+
 import { keccak256 } from "./keccak256.ts";
 import { is_json_array, is_json_object, JSONValue } from "./json.ts";
+import { default_or_convert } from "./lib.ts"
 
 // Configuration:
 // ~/.ubilog/config
@@ -767,6 +770,9 @@ function deserialize_message(bits: Bits): [Bits, Message] {
 
 const DEFAULT_PORT: number = 16936;
 
+const valid_port = (port: number) => (!isNaN(port)) && port >= 1 && port <= 65535;
+const valid_octet = (octet: number) => !isNaN(octet) && octet >= 0 && octet <= 255;
+
 function address_to_deno(address: Address): Deno.Addr {
   return {
     transport: "udp",
@@ -791,25 +797,19 @@ function deno_to_address(deno_addr: Deno.Addr): Address {
   }
 }
 
-function string_to_address(address: string): Address {
+function string_to_address(address_txt: string): Address {
   // TODO IPv6
-  const [ip_txt, port_txt] = address.split(":");
-  let port: number = DEFAULT_PORT;
-  if (port_txt == undefined) {
-    port = DEFAULT_PORT;
-  } else {
-    port = Number(port_txt);
-    if (isNaN(port)) {
-      throw new Error(`invalid port: ${port_txt}`);
-    }
+  const [ip_txt, port_txt] = address_txt.split(":");
+  const port = default_or_convert(Number, valid_port)(DEFAULT_PORT)(port_txt);
+  if (port === null) {
+    throw new Error(`invalid port: '${port_txt}'`);
   }
   const [val0_txt, val1_txt, val2_txt, val3_txt] = ip_txt.split(".");
   const val0 = Number(val0_txt);
   const val1 = Number(val1_txt);
   const val2 = Number(val2_txt);
   const val3 = Number(val3_txt);
-  const valid_val = (port: number) => !isNaN(port) && port >= 0 && port <= 255;
-  if (!valid_val(val0) || !valid_val(val1) || !valid_val(val2) || !valid_val(val3)) {
+  if (!valid_octet(val0) || !valid_octet(val1) || !valid_octet(val2) || !valid_octet(val3)) {
     throw new Error(`invalid address: ${ip_txt}`);
   }
   return {
@@ -1040,7 +1040,7 @@ export function start_node(port: number = DEFAULT_PORT) {
           ++count;
         }
       }
-      //console.log("asked " + count + " pendings");
+      //console.log("asked " + count + " pending blocks");
     }
   }
 
@@ -1105,13 +1105,13 @@ export function start_node(port: number = DEFAULT_PORT) {
 
   // Displays status
   function displayer() {
-    const targ = node.chain.target[node.chain.tip[1]];
-    const diff = compute_difficulty(targ);
+    const target = node.chain.target[node.chain.tip[1]];
+    const diff = compute_difficulty(target);
     const rate = (diff * 1000n) / TIME_PER_BLOCK;
-    const pendings = node.chain.pending;
+    const pending = node.chain.pending;
     let pending_size = 0;
     let pending_seen = 0;
-    for (const bhash in pendings) {
+    for (const bhash in pending) {
       if (node.chain.seen[bhash]) {
         pending_seen += 1;
       }
@@ -1183,3 +1183,35 @@ export function start_node(port: number = DEFAULT_PORT) {
 //test_0();
 
 //start_node(42000);
+
+function err(x: any) {
+  console.error(`ERROR: ${x}`)
+}
+
+function show_usage() {
+  console.log(`Usage:  ubilog-ts [--port PORT]`)
+}
+
+function err_usage_exit(x: any): never {
+  err(x);
+  show_usage();
+  Deno.exit(1);
+}
+
+function main() {
+  const parsed = parse_args(Deno.args, {
+    string: ["port"]
+  });
+
+  const port_txt: string | undefined = parsed.port;
+  const port = default_or_convert(Number, valid_port)(DEFAULT_PORT)(port_txt);
+  if (port === null) {
+    err_usage_exit(`invalid port: '${port_txt}'`)
+  }
+
+  console.log(port);
+}
+
+if (import.meta.main) {
+  main();
+}
