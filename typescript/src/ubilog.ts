@@ -11,9 +11,13 @@ import { default_or_convert } from "./lib.ts"
 // ~/.ubilog/secret_key
 // Persistence:
 // ~/.ubilog/to_mine
-// ~/.ubilog/blocks/HASH
-// TODO ~/.ubilog/longest ?
-// ~/.ubilog/mined/HASH
+
+// ~/.ubilog/data/blocks/HASH
+// ~/.ubilog/data/mined/HASH
+// TODO ~/.ubilog/data/longest ?
+
+const DIR_BLOCKS = "data/blocks"
+const DIR_MINED = "data/mined"
 
 // Types
 // =====
@@ -1013,7 +1017,7 @@ export function start_node(port: number = DEFAULT_PORT) {
       add_block(node.chain, new_block, get_time());
 
       const bhash = hash_block(new_block);
-      const dir = get_dir("mined");
+      const dir = get_dir(DIR_MINED);
       const rand_txt = pad_left(64/8*2, "0", rand.toString(16));
       // TODO one folder per key?
       Deno.writeTextFileSync(dir + "/" + bhash, rand_txt);
@@ -1063,14 +1067,14 @@ export function start_node(port: number = DEFAULT_PORT) {
       const bits = serialize_block(chain[i]);
       const buff = bits_to_uint8array(bits);
       const indx = pad_left(16, "0", i.toString(16));
-      const bdir = get_dir("blocks");
+      const bdir = get_dir(DIR_BLOCKS);
       Deno.writeFileSync(bdir + "/" + indx, buff);
     }
   }
 
   // Loads saved blocks
   function loader() {
-    const bdir = get_dir("blocks");
+    const bdir = get_dir(DIR_BLOCKS);
     const files = Array.from(Deno.readDirSync(bdir)).sort((x, y) => x.name > y.name ? 1 : -1);
     for (const file of files) {
       const buff = Deno.readFileSync(bdir + "/" + file.name);
@@ -1094,8 +1098,9 @@ export function start_node(port: number = DEFAULT_PORT) {
         buff = new Uint8Array(BODY_SIZE)
         buff.set(old_buff);
       }
-      console.log(buff);
       body = buff;
+
+      console.log(`mining file: ${path}`)
       // TODO multiple files
       break;
     }
