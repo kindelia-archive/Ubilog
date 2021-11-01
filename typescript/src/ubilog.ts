@@ -2,6 +2,7 @@
 import { ensureDirSync } from "https://deno.land/std@0.113.0/fs/mod.ts"; // TODO: can this be local?
 import { parse as parse_args } from "https://deno.land/std@0.113.0/flags/mod.ts";
 
+import { compose, break_list, drop_while } from "./lib.ts";
 import { keccak256 } from "./keccak256.ts";
 import { is_json_array, is_json_object, JSONValue } from "./json.ts";
 import { default_or_convert } from "./lib.ts"
@@ -60,8 +61,9 @@ type Chain = {
 
 type Bits = string;
 
-type IPv4 = { ctor: "IPv4"; val0: U8; val1: U8; val2: U8; val3: U8; port: U16 };
-type Address = IPv4;
+type IPv4 = { ctor: "IPv4"; port: U16; val0: U8; val1: U8; val2: U8; val3: U8; };
+type IPv6 = { ctor: "IPv6"; port: U16; segments: number[];}
+type Address = IPv4 | IPv6;
 
 type Peer = {
   seen_at: Nat;
@@ -115,6 +117,12 @@ function now(): bigint {
 
 // Numbers
 // -------
+
+const bits_mask = (x: bigint): bigint => (1n << x) - 1n;
+
+const MASK_64 = bits_mask(64n);
+const MASK_192 = bits_mask(192n);
+const MASK_256 = bits_mask(256n);
 
 function next_power_of_two(x: number): number {
   return x <= 1 ? x : 2 ** (Math.floor(Math.log(x - 1) / Math.log(2)) + 1);
@@ -356,10 +364,8 @@ function mine(
     const [rand_0, rand_1] = crypto.getRandomValues(new Uint32Array(2));
     const rand = BigInt(rand_0) | (BigInt(rand_1) << 32n)
     const nonce = (secret_key << 64n) | rand;
-    const bits = BigInt(hash_uint8array(u256_to_uint8array(nonce))) &
-      0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFn;
-    // TODO trim 64 bits on `node_time`
-    const time = (node_time << 192n) | bits;
+    const bits = BigInt(hash_uint8array(u256_to_uint8array(nonce))) & MASK_192;
+    const time = ((node_time & MASK_64) << 192n) | bits;
     block = { ...block, time };
     const hash = hash_block(block);
     if (BigInt(hash) > target) {
@@ -787,43 +793,62 @@ function address_to_deno(address: Address): Deno.Addr {
 
 function deno_to_address(deno_addr: Deno.Addr): Address {
   if (deno_addr.transport === "udp") {
-    const [val0, val1, val2, val3] = deno_addr.hostname.split(".");
-    return {
-      ctor: "IPv4",
-      val0: Number(val0),
-      val1: Number(val1),
-      val2: Number(val2),
-      val3: Number(val3),
-      port: Number(deno_addr.port),
-    };
+    return string_to_address(`${deno_addr.hostname}:${deno_addr.port}`);
   } else {
     throw new Error(`Invalid UDP address: ${deno_addr}`);
   }
 }
 
 function string_to_address(address_txt: string): Address {
-  // TODO IPv6
-  const [ip_txt, port_txt] = address_txt.split(":");
+  const addr_split = address_txt.split(":");
+  const port_txt = address_txt[-1];
+  const ip_txt = addr_split.slice(0, -1).join(":");
+
   const port = default_or_convert(Number, valid_port)(DEFAULT_PORT)(port_txt);
   if (port === null) {
     throw new Error(`invalid port: '${port_txt}'`);
   }
-  const [val0_txt, val1_txt, val2_txt, val3_txt] = ip_txt.split(".");
-  const val0 = Number(val0_txt);
-  const val1 = Number(val1_txt);
-  const val2 = Number(val2_txt);
-  const val3 = Number(val3_txt);
-  if (!valid_octet(val0) || !valid_octet(val1) || !valid_octet(val2) || !valid_octet(val3)) {
-    throw new Error(`invalid address: ${ip_txt}`);
+
+  if (ip_txt[0] == "[") {
+    // IPv6 address
+    // TODO dual (ipv4) format
+    const txt = ip_txt.slice(1, -1);
+    const segments_txt = txt.split(":");
+
+    const is_empty = (x: string): boolean => !x;
+    let [prefix_txt, suffix_txt] = break_list(is_empty)(segments_txt);
+    prefix_txt = drop_while(is_empty)(prefix_txt);
+    suffix_txt = drop_while(is_empty)(suffix_txt);
+
+    const prefix_segments = prefix_txt.map((x) => parseInt(x, 16));
+    const suffix_segments = suffix_txt.map((x) => parseInt(x, 16));
+    const len = prefix_segments.length + suffix_segments.length;
+    const fill: number[] = Array(8 - len).fill(0);
+    const segments = prefix_segments.concat(fill).concat(suffix_segments);
+
+    return {
+      ctor: "IPv6",
+      port: port,
+      segments: segments,
+    };
+  } else {
+    const [val0_txt, val1_txt, val2_txt, val3_txt] = ip_txt.split(".");
+    const val0 = Number(val0_txt);
+    const val1 = Number(val1_txt);
+    const val2 = Number(val2_txt);
+    const val3 = Number(val3_txt);
+    if ([val0, val1, val2, val3].some((x) => !valid_octet(x))) {
+      throw new Error(`invalid address: ${ip_txt}`);
+    }
+    return {
+      ctor: "IPv4",
+      port: port,
+      val0: val0,
+      val1: val1,
+      val2: val2,
+      val3: val3,
+    };
   }
-  return {
-    ctor: "IPv4",
-    val0: val0,
-    val1: val1,
-    val2: val2,
-    val3: val3,
-    port: port,
-  };
 }
 
 function udp_init(port: number = DEFAULT_PORT) {
