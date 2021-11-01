@@ -1,4 +1,4 @@
-FROM denoland/deno:alpine  # TODO pin version
+FROM denoland/deno:alpine
 
 COPY . /usr/src/app
 WORKDIR /usr/src/app

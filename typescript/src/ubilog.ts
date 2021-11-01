@@ -2,10 +2,10 @@
 import { ensureDirSync } from "https://deno.land/std@0.113.0/fs/mod.ts"; // TODO: can this be local?
 import { parse as parse_args } from "https://deno.land/std@0.113.0/flags/mod.ts";
 
-import { compose, break_list, drop_while } from "./lib.ts";
+import { break_list, drop_while } from "./lib.ts";
 import { keccak256 } from "./keccak256.ts";
 import { is_json_array, is_json_object, JSONValue } from "./json.ts";
-import { default_or_convert } from "./lib.ts"
+import { default_or_convert } from "./lib.ts";
 
 // Configuration:
 // ~/.ubilog/config
@@ -17,8 +17,8 @@ import { default_or_convert } from "./lib.ts"
 // ~/.ubilog/data/mined/HASH
 // TODO ~/.ubilog/data/longest ?
 
-const DIR_BLOCKS = "data/blocks"
-const DIR_MINED = "data/mined"
+const DIR_BLOCKS = "data/blocks";
+const DIR_MINED = "data/mined";
 
 // Types
 // =====
@@ -61,8 +61,8 @@ type Chain = {
 
 type Bits = string;
 
-type IPv4 = { ctor: "IPv4"; port: U16; val0: U8; val1: U8; val2: U8; val3: U8; };
-type IPv6 = { ctor: "IPv6"; port: U16; segments: number[];}
+type IPv4 = { ctor: "IPv4"; port: U16; val0: U8; val1: U8; val2: U8; val3: U8 };
+type IPv6 = { ctor: "IPv6"; port: U16; segments: number[] };
 type Address = IPv4 | IPv6;
 
 type Peer = {
@@ -274,7 +274,9 @@ function uint8array_to_bits(buff: Uint8Array): Bits {
 // Hashing
 // -------
 
-const HashZero: Hash = HASH("0x0000000000000000000000000000000000000000000000000000000000000000");
+const HashZero: Hash = HASH(
+  "0x0000000000000000000000000000000000000000000000000000000000000000",
+);
 
 // function u64_to_uint8array(value: U64): Uint8Array {
 //   const bytes: F64[] = [];
@@ -329,7 +331,7 @@ function hash_uint8array(words: Uint8Array): Hash {
 }
 
 function hash_block(block: Block): Hash {
-  if ((block.prev === HashZero) && (block.time === 0n)) {
+  if (block.prev === HashZero && block.time === 0n) {
     return HashZero;
   } else {
     return hash_uint8array(
@@ -362,7 +364,7 @@ function mine(
 ): [Block, U64] | null {
   for (let i = 0n; i < max_attempts; ++i) {
     const [rand_0, rand_1] = crypto.getRandomValues(new Uint32Array(2));
-    const rand = BigInt(rand_0) | (BigInt(rand_1) << 32n)
+    const rand = BigInt(rand_0) | (BigInt(rand_1) << 32n);
     const nonce = (secret_key << 64n) | rand;
     const bits = BigInt(hash_uint8array(u256_to_uint8array(nonce))) & MASK_192;
     const time = ((node_time & MASK_64) << 192n) | bits;
@@ -418,7 +420,6 @@ const TIME_PER_PERIOD: Nat = TIME_PER_BLOCK * BLOCKS_PER_PERIOD;
 // initial target of 256 hashes per block
 const INITIAL_TARGET: Nat = compute_target(256n);
 
-
 const BODY_SIZE = 1280;
 
 const EmptyBody: Body = new Uint8Array(BODY_SIZE);
@@ -462,20 +463,27 @@ function add_block(chain: Chain, block: Block, time: U64) {
           chain.children[bhash] = [];
           // If the block is valid
           const has_enough_work = BigInt(bhash) >= chain.target[phash];
-          const advances_time = btime > (chain.block[phash].time >> 192n);
+          const advances_time = btime > chain.block[phash].time >> 192n;
           if (has_enough_work && advances_time) {
             chain.work[bhash] = chain.work[phash] + work;
             if (phash !== HashZero) {
               chain.height[bhash] = chain.height[phash] + 1n;
             }
-            if (chain.height[bhash] > 0n && chain.height[bhash] % BLOCKS_PER_PERIOD === 0n) {
+            if (
+              chain.height[bhash] > 0n &&
+              chain.height[bhash] % BLOCKS_PER_PERIOD === 0n
+            ) {
               let checkpoint_hash = phash;
               for (let i = 0n; i < BLOCKS_PER_PERIOD - 1n; ++i) {
                 checkpoint_hash = chain.block[checkpoint_hash].prev;
               }
-              const period_time = Number(btime - (chain.block[checkpoint_hash].time >> 192n));
+              const period_time = Number(
+                btime - (chain.block[checkpoint_hash].time >> 192n),
+              );
               const last_target = chain.target[phash];
-              const scale = BigInt(Math.floor(2 ** 32 * Number(TIME_PER_PERIOD) / period_time));
+              const scale = BigInt(
+                Math.floor((2 ** 32 * Number(TIME_PER_PERIOD)) / period_time),
+              );
               const next_target = compute_next_target(last_target, scale);
               chain.target[bhash] = next_target;
               //console.log("A period should last   " + TIME_PER_PERIOD + " seconds.");
@@ -571,7 +579,7 @@ function show_chain(chain: Chain, _lines: number) {
 
 function serialize_fixed_len(size: F64, value: Nat): Bits {
   if (size > 0) {
-    const head = (value % 2n) === 0n ? "0" : "1";
+    const head = value % 2n === 0n ? "0" : "1";
     const tail = serialize_fixed_len(size - 1, value / 2n);
     return head + tail;
   } else {
@@ -730,7 +738,10 @@ function deserialize_block(bits: Bits): [Bits, Block] {
 function serialize_message(message: Message): Bits {
   switch (message.ctor) {
     case "PutPeers": {
-      const peers = serialize_list(serialize_address, array_to_list(message.peers));
+      const peers = serialize_list(
+        serialize_address,
+        array_to_list(message.peers),
+      );
       return "0000" + peers;
     }
     case "PutBlock": {
@@ -780,7 +791,7 @@ function deserialize_message(bits: Bits): [Bits, Message] {
 
 const DEFAULT_PORT: number = 16936;
 
-const valid_port = (port: number) => (!isNaN(port)) && port >= 1 && port <= 65535;
+const valid_port = (port: number) => !isNaN(port) && port >= 1 && port <= 65535;
 const valid_octet = (octet: number) => !isNaN(octet) && octet >= 0 && octet <= 255;
 
 function address_to_deno(address: Address): Deno.Addr {
@@ -904,7 +915,7 @@ function ensure_text_file(path: string, content: string = "") {
   }
 }
 
-export function start_node(port: number = DEFAULT_PORT) {
+export function start_node({ port = DEFAULT_PORT, display = false }) {
   const MINER_CPS = 16;
   const MINER_HASHRATE = 1024;
   let MINED = 0;
@@ -1043,7 +1054,7 @@ export function start_node(port: number = DEFAULT_PORT) {
 
       const bhash = hash_block(new_block);
       const dir = get_dir(DIR_MINED);
-      const rand_txt = pad_left(64/8*2, "0", rand.toString(16));
+      const rand_txt = pad_left((64 / 8) * 2, "0", rand.toString(16));
       // TODO one folder per key?
       Deno.writeTextFileSync(dir + "/" + bhash, rand_txt);
       //displayer();
@@ -1109,23 +1120,24 @@ export function start_node(port: number = DEFAULT_PORT) {
       //console.log(block);
       add_block(node.chain, block, get_time());
     }
-    
+
     const to_mine_dir = get_dir("to_mine");
-    const to_mine_files =
-      Array.from(Deno.readDirSync(to_mine_dir)).sort((x, y) => x.name > y.name ? 1 : -1);
+    const to_mine_files = Array.from(Deno.readDirSync(to_mine_dir)).sort((x, y) =>
+      x.name > y.name ? 1 : -1
+    );
     for (const file of to_mine_files) {
       const path = to_mine_dir + "/" + file.name;
       let buff = Deno.readFileSync(path);
       if (buff.length > BODY_SIZE) {
-        throw new Error(`Block body file '${path}' is bigger than ${BODY_SIZE} bytes.'`)
+        throw new Error(`Block body file '${path}' is bigger than ${BODY_SIZE} bytes.'`);
       } else {
         const old_buff = buff;
-        buff = new Uint8Array(BODY_SIZE)
+        buff = new Uint8Array(BODY_SIZE);
         buff.set(old_buff);
       }
       body = buff;
 
-      console.log(`mining file: ${path}`)
+      console.log(`mining file: ${path}`);
       // TODO multiple files
       break;
     }
@@ -1182,11 +1194,14 @@ export function start_node(port: number = DEFAULT_PORT) {
   }
 
   loader();
+
   setInterval(miner, 1000 / MINER_CPS);
   setInterval(gossiper, 1000);
   setInterval(requester, 1000 / 32);
-  setInterval(displayer, 1000);
   setInterval(saver, 1000 * 30);
+  if (display) {
+    setInterval(displayer, 1000);
+  }
 }
 
 //var port = Number(Deno.args[0]) || 42000;
@@ -1215,11 +1230,11 @@ export function start_node(port: number = DEFAULT_PORT) {
 //start_node(42000);
 
 function err(x: any) {
-  console.error(`ERROR: ${x}`)
+  console.error(`ERROR: ${x}`);
 }
 
 function show_usage() {
-  console.log(`Usage:  ubilog-ts [--port PORT]`)
+  console.log(`Usage:  ubilog-ts [--port PORT]`);
 }
 
 function err_usage_exit(x: any): never {
@@ -1230,16 +1245,18 @@ function err_usage_exit(x: any): never {
 
 function main() {
   const parsed = parse_args(Deno.args, {
-    string: ["port"]
+    string: ["port"],
+    boolean: ["display"],
   });
 
   const port_txt: string | undefined = parsed.port;
   const port = default_or_convert(Number, valid_port)(DEFAULT_PORT)(port_txt);
   if (port === null) {
-    err_usage_exit(`invalid port: '${port_txt}'`)
+    err_usage_exit(`invalid port: '${port_txt}'`);
   }
+  const display = !!parsed.display;
 
-  console.log(port);
+  start_node({ port, display });
 }
 
 if (import.meta.main) {

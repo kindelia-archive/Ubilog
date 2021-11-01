@@ -2,4 +2,4 @@
 
 import { start_node } from "./ubilog.ts";
 
-start_node(42001);
+start_node({ port: 42001 });
