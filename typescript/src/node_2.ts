@@ -1,5 +1,5 @@
 // deno-lint-ignore-file camelcase
 
-import { start_node } from "./ubilog.ts";
+import { main } from "./ubilog.ts";
 
-start_node({ port: 42002 });
+main(Deno.args.concat(["--port=42002"]));

@@ -1,24 +1,29 @@
 // deno-lint-ignore-file camelcase no-inferrable-types
-import { ensureDirSync } from "https://deno.land/std@0.113.0/fs/mod.ts"; // TODO: can this be local?
 import { parse as parse_args } from "https://deno.land/std@0.113.0/flags/mod.ts";
+import * as path from "https://deno.land/std@0.110.0/path/mod.ts";
 
-import { break_list, drop_while } from "./lib.ts";
+import { break_list, drop_while,default_or_convert } from "./lib/func.ts";
 import { keccak256 } from "./keccak256.ts";
-import { is_json_array, is_json_object, JSONValue } from "./json.ts";
-import { default_or_convert } from "./lib.ts";
+import { is_json_object, JSONValue } from "./lib/json.ts";
+import { resolve_config } from "./config.ts"
+import { ensure_text_file, get_dir } from "./lib/util.ts";
+
+// TODO
+// - slices
 
 // Configuration:
 // ~/.ubilog/config
 // ~/.ubilog/secret_key
 // Persistence:
-// ~/.ubilog/to_mine
+// ~/.ubilog/to_mine  // TODO remove
 
+// Output:
 // ~/.ubilog/data/blocks/HASH
-// ~/.ubilog/data/mined/HASH
-// TODO ~/.ubilog/data/longest ?
+// ~/.ubilog/data/mined/HASH  // TODO one JSONL file
 
 const DIR_BLOCKS = "data/blocks";
 const DIR_MINED = "data/mined";
+const DIR_TOMINE = "to_mine";
 
 // Types
 // =====
@@ -893,65 +898,14 @@ function udp_receive<T>(
 // Node
 // ----
 
-const DEFAULT_CONFIG_FILE = `
-{
-  "peers": ["127.0.0.1:42000", "127.0.0.1:42001", "127.0.0.1:42002"]
-}
-`;
-
-function ensure_text_file(path: string, content: string = "") {
-  try {
-    const stat = Deno.statSync(path);
-    // TODO handle symlink?
-    if (!stat.isFile) {
-      throw new Error(`'${path}' exists but is not a file.`);
-    }
-  } catch (err) {
-    if (err instanceof Deno.errors.NotFound) {
-      Deno.writeTextFileSync(path, content);
-    } else {
-      throw err;
-    }
-  }
-}
-
-export function start_node({ port = DEFAULT_PORT, display = false }) {
+export function start_node(base_dir: string, { port = DEFAULT_PORT, display = false }) {
   const MINER_CPS = 16;
   const MINER_HASHRATE = 1024;
   let MINED = 0;
 
   // Loads config
 
-  function load_config(): JSONValue {
-    const base_dir = get_dir();
-    const config_path = `${base_dir}/config`;
-    ensure_text_file(config_path, DEFAULT_CONFIG_FILE);
-    const config_file = Deno.readTextFileSync(config_path);
-    const config_data = JSON.parse(config_file);
-    return config_data;
-  }
-
   const peers: Dict<Peer> = {};
-
-  const config = load_config();
-
-  // TODO separate config parsing
-  if (is_json_object(config)) {
-    for (const key in config) {
-      if (key === "peers") {
-        const peers_txt = config[key];
-        if (is_json_array(peers_txt)) {
-          for (const peer_txt of peers_txt) {
-            if (typeof peer_txt === "string") {
-              const addr = string_to_address(peer_txt);
-              const seen = now();
-              peers[serialize_address(addr)] = { seen_at: seen, address: addr };
-            }
-          }
-        }
-      }
-    }
-  }
 
   // Initializes the node
 
@@ -966,16 +920,6 @@ export function start_node({ port = DEFAULT_PORT, display = false }) {
 
   // Initializes sockets
   const udp = udp_init(port);
-
-  // TODO: improve performance
-  //function random_peers(count: number): Array<Peer> {
-  //  const keys = Object.keys(node.peers);
-  //  const peers = [];
-  //  for (let i = 0; i < count; ++i) {
-  //    peers.push(node.peers[keys[keys.length * Math.random() << 0]]);
-  //  }
-  //  return peers;
-  //}
 
   // Returns the current time
   // TODO: get peers median?
@@ -1053,7 +997,7 @@ export function start_node({ port = DEFAULT_PORT, display = false }) {
       add_block(node.chain, new_block, get_time());
 
       const bhash = hash_block(new_block);
-      const dir = get_dir(DIR_MINED);
+      const dir = get_dir(base_dir)(DIR_MINED);
       const rand_txt = pad_left((64 / 8) * 2, "0", rand.toString(16));
       // TODO one folder per key?
       Deno.writeTextFileSync(dir + "/" + bhash, rand_txt);
@@ -1084,17 +1028,6 @@ export function start_node({ port = DEFAULT_PORT, display = false }) {
     }
   }
 
-  function get_dir(path: string = "") {
-    const dir = Deno.env.get("HOME") + `/.ubilog/${path}`;
-    ensureDirSync(dir);
-    return dir;
-  }
-
-  //function get_blocks_dir() {
-  //  const dir = Deno.env.get("HOME") + "/.ubilog/blocks";
-  //  ensureDirSync(dir);
-  //  return dir;
-  //}
 
   // Saves longest chain
   function saver() {
@@ -1103,25 +1036,23 @@ export function start_node({ port = DEFAULT_PORT, display = false }) {
       const bits = serialize_block(chain[i]);
       const buff = bits_to_uint8array(bits);
       const indx = pad_left(16, "0", i.toString(16));
-      const bdir = get_dir(DIR_BLOCKS);
+      const bdir = get_dir(base_dir)(DIR_BLOCKS);
       Deno.writeFileSync(bdir + "/" + indx, buff);
     }
   }
 
   // Loads saved blocks
   function loader() {
-    const bdir = get_dir(DIR_BLOCKS);
+    const bdir = get_dir(base_dir)(DIR_BLOCKS);
     const files = Array.from(Deno.readDirSync(bdir)).sort((x, y) => x.name > y.name ? 1 : -1);
     for (const file of files) {
       const buff = Deno.readFileSync(bdir + "/" + file.name);
       const [_bits, block] = deserialize_block(uint8array_to_bits(buff));
-      //console.log("loaded " + file.name);
-      //console.log(hash_block(block));
-      //console.log(block);
       add_block(node.chain, block, get_time());
     }
 
-    const to_mine_dir = get_dir("to_mine");
+    // TODO remove: mempool on memory only
+    const to_mine_dir = get_dir(base_dir)(DIR_TOMINE);
     const to_mine_files = Array.from(Deno.readDirSync(to_mine_dir)).sort((x, y) =>
       x.name > y.name ? 1 : -1
     );
@@ -1136,13 +1067,8 @@ export function start_node({ port = DEFAULT_PORT, display = false }) {
         buff.set(old_buff);
       }
       body = buff;
-
-      console.log(`mining file: ${path}`);
-      // TODO multiple files
       break;
     }
-
-    //Deno.exit();
   }
 
   // Displays status
@@ -1243,22 +1169,40 @@ function err_usage_exit(x: any): never {
   Deno.exit(1);
 }
 
-function main() {
-  const parsed = parse_args(Deno.args, {
+const DEFAULT_CONFIG_FILE = `
+{
+  "peers": ["127.0.0.1:42000", "127.0.0.1:42001", "127.0.0.1:42002"]
+}
+`;
+
+function load_config_file(base_dir: string): JSONValue {
+  const config_path = `${base_dir}/config`;
+  ensure_text_file(config_path, DEFAULT_CONFIG_FILE);
+  const config_file = Deno.readTextFileSync(config_path);
+  const config_data = JSON.parse(config_file);
+  return config_data;
+}
+
+type GetEnv = (name: string) => string | undefined;
+
+export function main(args: string[], get_env: GetEnv = Deno.env.get): void {
+  const parsed_flags = parse_args(args, {
     string: ["port"],
     boolean: ["display"],
   });
 
-  const port_txt: string | undefined = parsed.port;
-  const port = default_or_convert(Number, valid_port)(DEFAULT_PORT)(port_txt);
-  if (port === null) {
-    err_usage_exit(`invalid port: '${port_txt}'`);
-  }
-  const display = !!parsed.display;
+  const base_dir = get_env("UBILOG_DIR") || path.join(get_env("HOME") || "", ".ubilog"); // TODO fix ENV("HOME") || ""
 
-  start_node({ port, display });
+  const config_file_data = load_config_file(base_dir);
+  if (!is_json_object(config_file_data)) {
+    throw new Error(`invalid config file, it's not a JSON object`);
+  }
+
+  const config = resolve_config(parsed_flags, config_file_data, get_env);
+
+  start_node(base_dir, { port: config.net_port, display: config.display });
 }
 
 if (import.meta.main) {
-  main();
+  main(Deno.args, Deno.env.get);
 }

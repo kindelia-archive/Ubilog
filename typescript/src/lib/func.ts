@@ -1,4 +1,4 @@
-export { compose } from "https://deno.land/x/fae@v1.0.0/compose.ts";
+export const compose2 = <A, B>(f1: (x: A) => B) => <C>(f2: (x: B) => C) => (x: A): C => f2(f1(x));
 
 export const break_list = <T>(p: (x: T) => boolean) =>
   (xs: T[]): [T[], T[]] => {
