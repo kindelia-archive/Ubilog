@@ -1,9 +1,11 @@
 import { config_resolver, ConfigSchema, Validators as V } from "./lib/configinator.ts";
 import { is_json_object, JSONValue } from "./lib/json.ts";
+import { bits_mask } from "./lib/numbers.ts";
 
 type ConfigTypes = {
   net_port: number;
   display: boolean;
+  secret_key: bigint;
   // peers: string[],
 };
 
@@ -13,6 +15,12 @@ const config_schema: ConfigSchema<ConfigTypes> = {
     env: "PORT",
     flag: "port",
     default: 16936,
+  },
+  secret_key: {
+    validator: V.bigint_range(0n, bits_mask(256n)),
+    env: "SECRET_KEY",
+    default: 0n,
+    sensitive: true,
   },
   display: {
     validator: V.yes_no,

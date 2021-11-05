@@ -1,3 +1,6 @@
+export * as result from "./result.ts";
+export type { default as Result } from "./result.ts";
+
 export const compose2 = <A, B>(f1: (x: A) => B) => <C>(f2: (x: B) => C) => (x: A): C => f2(f1(x));
 
 export const break_list = <T>(p: (x: T) => boolean) =>

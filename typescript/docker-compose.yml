@@ -8,7 +8,6 @@ services:
       context: .
     volumes:
       - "ubilog-data:/home/root/.ubilog/data"
-      - "./deno.json:/home/root/.ubilog/to_mine/0001"  # TODO
 
 volumes:
   ubilog-data:

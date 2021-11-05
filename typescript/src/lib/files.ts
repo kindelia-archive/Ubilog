@@ -1,8 +1,7 @@
-import { ensureDirSync } from "https://deno.land/std@0.113.0/fs/mod.ts"; // TODO: can this be local?
+import { ensureDirSync } from "https://deno.land/std@0.113.0/fs/mod.ts";
 import * as Path from "https://deno.land/std@0.110.0/path/mod.ts";
 
-export const get_dir =
-  (base: string) =>
+export const get_dir_with_base = (base: string) =>
   (path: string = ""): string => {
     const dir = Path.join(base, path);
     ensureDirSync(dir);

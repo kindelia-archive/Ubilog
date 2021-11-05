@@ -2,28 +2,30 @@
 import { parse as parse_args } from "https://deno.land/std@0.113.0/flags/mod.ts";
 import * as path from "https://deno.land/std@0.110.0/path/mod.ts";
 
-import { break_list, drop_while,default_or_convert } from "./lib/func.ts";
-import { keccak256 } from "./keccak256.ts";
+import { break_list, default_or_convert, drop_while } from "./lib/func/mod.ts";
 import { is_json_object, JSONValue } from "./lib/json.ts";
-import { resolve_config } from "./config.ts"
-import { ensure_text_file, get_dir } from "./lib/util.ts";
+import { ensure_text_file, get_dir_with_base } from "./lib/files.ts";
+import { bits_mask } from "./lib/numbers.ts";
+
+import { keccak256 } from "./keccak256.ts";
+import { resolve_config } from "./config.ts";
 
 // TODO
 // - slices
 
 // Configuration:
 // ~/.ubilog/config
-// ~/.ubilog/secret_key
-// Persistence:
-// ~/.ubilog/to_mine  // TODO remove
-
 // Output:
 // ~/.ubilog/data/blocks/HASH
-// ~/.ubilog/data/mined/HASH  // TODO one JSONL file
+// ~/.ubilog/data/mined/HASH  // TODO: mined rands on JSONL file(s)
+
+// Constants
+// ---------
+
+const BODY_SIZE = 1280;
 
 const DIR_BLOCKS = "data/blocks";
 const DIR_MINED = "data/mined";
-const DIR_TOMINE = "to_mine";
 
 // Types
 // =====
@@ -83,12 +85,12 @@ type HNode<A> = { ctor: "HNode"; value: [bigint, A]; child: List<Heap<A>> };
 type Empty<A> = { ctor: "Empty" };
 type Heap<A> = Empty<A> | HNode<A>;
 
-//type Slice = { work: U64, data: Bits }
+type Slice = { work: U64; data: Bits };
 
 type PutPeers = { ctor: "PutPeers"; peers: Address[] };
-//type PutSlice = { ctor: "PutSlice", slice: Slice }
 type PutBlock = { ctor: "PutBlock"; block: Block };
 type AskBlock = { ctor: "AskBlock"; bhash: Hash };
+type PutSlices = { ctor: "PutSlices"; slices: Slice[] };
 type Message = PutPeers | PutBlock | AskBlock;
 
 type Mail = {
@@ -122,8 +124,6 @@ function now(): bigint {
 
 // Numbers
 // -------
-
-const bits_mask = (x: bigint): bigint => (1n << x) - 1n;
 
 const MASK_64 = bits_mask(64n);
 const MASK_192 = bits_mask(192n);
@@ -425,8 +425,6 @@ const TIME_PER_PERIOD: Nat = TIME_PER_BLOCK * BLOCKS_PER_PERIOD;
 // initial target of 256 hashes per block
 const INITIAL_TARGET: Nat = compute_target(256n);
 
-const BODY_SIZE = 1280;
-
 const EmptyBody: Body = new Uint8Array(BODY_SIZE);
 
 const BlockZero: Block = {
@@ -457,7 +455,7 @@ function add_block(chain: Chain, block: Block, time: U64) {
       if (chain.block[bhash] === undefined) {
         const phash = block.prev;
         // If previous block is available, add the block
-        // TODO extract to add mined block?
+        // TODO: extract function to add mined blocks?
         if (chain.block[phash] !== undefined) {
           const work = get_hash_work(bhash);
           // const ptime = chain.block
@@ -540,7 +538,15 @@ function get_longest_chain(chain: Chain): Array<Block> {
 function get_address_hostname(address: Address): string {
   switch (address.ctor) {
     case "IPv4":
-      return address.val0 + "." + address.val1 + "." + address.val2 + "." + address.val3;
+      return (
+        address.val0 +
+        "." +
+        address.val1 +
+        "." +
+        address.val2 +
+        "." +
+        address.val3
+      );
   }
   return "";
 }
@@ -550,17 +556,24 @@ function show_block(chain: Chain, block: Block, index: number) {
   const work = chain.work[bhash] || 0n;
   const show_index = BigInt(index).toString();
   const show_time = (block.time >> 192n).toString(10);
-  const show_body = [].slice.call(block.body, 0, 32).map(
-    (x: number) => pad_left(2, "0", x.toString(16)),
-  ).join("");
+  const show_body = [].slice
+    .call(block.body, 0, 32)
+    .map((x: number) => pad_left(2, "0", x.toString(16)))
+    .join("");
   const show_hash = bhash;
   const show_work = work.toString();
-  return "" +
-    pad_left(8, " ", show_index) + " | " +
-    pad_left(13, "0", show_time) + " | " +
-    pad_left(64, "0", show_hash) + " | " +
-    pad_left(64, "0", show_body) + " | " +
-    pad_left(16, "0", show_work);
+  return (
+    "" +
+    pad_left(8, " ", show_index) +
+    " | " +
+    pad_left(13, "0", show_time) +
+    " | " +
+    pad_left(64, "0", show_hash) +
+    " | " +
+    pad_left(64, "0", show_body) +
+    " | " +
+    pad_left(16, "0", show_work)
+  );
 }
 
 function show_chain(chain: Chain, _lines: number) {
@@ -827,7 +840,7 @@ function string_to_address(address_txt: string): Address {
 
   if (ip_txt[0] == "[") {
     // IPv6 address
-    // TODO dual (ipv4) format
+    // TODO: dual (ipv4) format
     const txt = ip_txt.slice(1, -1);
     const segments_txt = txt.split(":");
 
@@ -898,9 +911,16 @@ function udp_receive<T>(
 // Node
 // ----
 
-export function start_node(base_dir: string, { port = DEFAULT_PORT, display = false }) {
+export function start_node(
+  base_dir: string,
+  { port = DEFAULT_PORT, display = false },
+) {
+  const get_dir = get_dir_with_base(base_dir);
+
+  // TODO: i don't understand this  :P
   const MINER_CPS = 16;
   const MINER_HASHRATE = 1024;
+
   let MINED = 0;
 
   // Loads config
@@ -997,9 +1017,9 @@ export function start_node(base_dir: string, { port = DEFAULT_PORT, display = fa
       add_block(node.chain, new_block, get_time());
 
       const bhash = hash_block(new_block);
-      const dir = get_dir(base_dir)(DIR_MINED);
+      const dir = get_dir(DIR_MINED);
       const rand_txt = pad_left((64 / 8) * 2, "0", rand.toString(16));
-      // TODO one folder per key?
+      // TODO: one file per secret_key? store secret key hash with each rand (much redundancy)?
       Deno.writeTextFileSync(dir + "/" + bhash, rand_txt);
       //displayer();
     }
@@ -1028,7 +1048,6 @@ export function start_node(base_dir: string, { port = DEFAULT_PORT, display = fa
     }
   }
 
-
   // Saves longest chain
   function saver() {
     const chain = get_longest_chain(node.chain);
@@ -1036,38 +1055,19 @@ export function start_node(base_dir: string, { port = DEFAULT_PORT, display = fa
       const bits = serialize_block(chain[i]);
       const buff = bits_to_uint8array(bits);
       const indx = pad_left(16, "0", i.toString(16));
-      const bdir = get_dir(base_dir)(DIR_BLOCKS);
+      const bdir = get_dir(DIR_BLOCKS);
       Deno.writeFileSync(bdir + "/" + indx, buff);
     }
   }
 
   // Loads saved blocks
   function loader() {
-    const bdir = get_dir(base_dir)(DIR_BLOCKS);
+    const bdir = get_dir(DIR_BLOCKS);
     const files = Array.from(Deno.readDirSync(bdir)).sort((x, y) => x.name > y.name ? 1 : -1);
     for (const file of files) {
       const buff = Deno.readFileSync(bdir + "/" + file.name);
       const [_bits, block] = deserialize_block(uint8array_to_bits(buff));
       add_block(node.chain, block, get_time());
-    }
-
-    // TODO remove: mempool on memory only
-    const to_mine_dir = get_dir(base_dir)(DIR_TOMINE);
-    const to_mine_files = Array.from(Deno.readDirSync(to_mine_dir)).sort((x, y) =>
-      x.name > y.name ? 1 : -1
-    );
-    for (const file of to_mine_files) {
-      const path = to_mine_dir + "/" + file.name;
-      let buff = Deno.readFileSync(path);
-      if (buff.length > BODY_SIZE) {
-        throw new Error(`Block body file '${path}' is bigger than ${BODY_SIZE} bytes.'`);
-      } else {
-        const old_buff = buff;
-        buff = new Uint8Array(BODY_SIZE);
-        buff.set(old_buff);
-      }
-      body = buff;
-      break;
     }
   }
 
@@ -1130,9 +1130,6 @@ export function start_node(base_dir: string, { port = DEFAULT_PORT, display = fa
   }
 }
 
-//var port = Number(Deno.args[0]) || 42000;
-//start_node(port);
-
 //function test_0() {
 //  const target = compute_target(1000n);
 //  const max_attempts = 999999;
@@ -1152,8 +1149,6 @@ export function start_node(base_dir: string, { port = DEFAULT_PORT, display = fa
 //  console.log(serialize_block(block_2));
 //}
 //test_0();
-
-//start_node(42000);
 
 function err(x: any) {
   console.error(`ERROR: ${x}`);
@@ -1183,6 +1178,7 @@ function load_config_file(base_dir: string): JSONValue {
   return config_data;
 }
 
+// TODO: move stuff to lib/config.ts
 type GetEnv = (name: string) => string | undefined;
 
 export function main(args: string[], get_env: GetEnv = Deno.env.get): void {
@@ -1191,8 +1187,8 @@ export function main(args: string[], get_env: GetEnv = Deno.env.get): void {
     boolean: ["display"],
   });
 
-  const base_dir = get_env("UBILOG_DIR") || path.join(get_env("HOME") || "", ".ubilog"); // TODO fix ENV("HOME") || ""
-
+  // TODO: fix ENV("HOME") || ""
+  const base_dir = get_env("UBILOG_DIR") || path.join(get_env("HOME") || "", ".ubilog");
   const config_file_data = load_config_file(base_dir);
   if (!is_json_object(config_file_data)) {
     throw new Error(`invalid config file, it's not a JSON object`);
