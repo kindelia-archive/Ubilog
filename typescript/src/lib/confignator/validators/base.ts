@@ -1,7 +1,7 @@
-import * as R from '../../functional/result.ts'
+import * as R from "../../functional/result.ts";
 import { is_json_array, JSONValue } from "../../json.ts";
 
-import { SResult, Validator } from "../types.ts"
+import { SResult, Validator } from "../types.ts";
 
 export class BaseValidator<T> implements Validator<T> {
   private readonly fn_from_string: (value: string) => SResult<T>;

@@ -1,19 +1,17 @@
 # TODO
 
-- finish config loader
-  - Validator composer
-  - Validator for lists
-  - fallback JSON validation to string validation
-  - JSON validators
-  - loader for initial peers
+- test JSON file config
+- test custom base dir
+  - on Docker volume
 
 - document lib/
 
-- refactor and split ubilog.ts file
 
 - test networking
   - metrics endpoint?
   - run on Oracle?
+
+- refactor and split ubilog.ts file
 
 - slices
 

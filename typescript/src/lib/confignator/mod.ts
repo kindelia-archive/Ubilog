@@ -1,6 +1,6 @@
 import { JSONObject } from "../json.ts";
 
-import { Validator } from './types.ts'
+import { Validator } from "./types.ts";
 
 export type { Address } from "./types.ts";
 export { Validators } from "./validators/mod.ts";
@@ -35,7 +35,6 @@ export const config_resolver = <R>(schema: ConfigSchema<R>) =>
         if (flag_val) {
           const txt = flag_val.toString();
           const res = item_schema.validator.from_string(txt);
-          // TODO check error
           if (res._ == "Ok") {
             result[key] = res.value;
             continue;

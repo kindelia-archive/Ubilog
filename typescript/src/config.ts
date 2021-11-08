@@ -1,12 +1,12 @@
 import { config_resolver, ConfigSchema, Validators as V } from "./lib/confignator/mod.ts";
-import { Address } from './lib/confignator/mod.ts'
+import { Address } from "./lib/confignator/mod.ts";
 import { bits_mask } from "./lib/numbers.ts";
 
 type ConfigTypes = {
   net_port: number;
   display: boolean;
   secret_key: bigint;
-  peers: [Address, number?][], // aaaaaaaa
+  peers: [Address, number?][]; // aaaaaaaa
 };
 
 const config_schema: ConfigSchema<ConfigTypes> = {
@@ -34,7 +34,7 @@ const config_schema: ConfigSchema<ConfigTypes> = {
     env: "PEERS",
     flag: "peers",
     default: [],
-  }
+  },
 };
 
 export const resolve_config = config_resolver<ConfigTypes>(config_schema);

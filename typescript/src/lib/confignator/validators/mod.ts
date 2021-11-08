@@ -1,20 +1,20 @@
 import * as R from "../../functional/result.ts";
 import { JSONValue } from "../../json.ts";
 
-import { SResult, Validator } from "../types.ts"
-import { BaseValidator, ListValidator } from './base.ts'
+import { SResult, Validator } from "../types.ts";
+import { BaseValidator, ListValidator } from "./base.ts";
 import { address_validator } from "./address.ts";
 
- const check_range = <T extends number | bigint>(min?: T, max?: T) =>
-    (x: T): SResult<T> => {
-      if (min != undefined && x < min) {
-        return R.Err(`'${x}' is less than '${min}'`);
-      }
-      if (max != undefined && x > max) {
-        return R.Err(`'${x}' is greater than ${max}`);
-      }
-      return R.Ok(x);
-    };
+const check_range = <T extends number | bigint>(min?: T, max?: T) =>
+  (x: T): SResult<T> => {
+    if (min != undefined && x < min) {
+      return R.Err(`'${x}' is less than '${min}'`);
+    }
+    if (max != undefined && x > max) {
+      return R.Err(`'${x}' is greater than ${max}`);
+    }
+    return R.Ok(x);
+  };
 
 export namespace Validators {
   export const list = <T>(item_validator: Validator<T>) => new ListValidator(item_validator);

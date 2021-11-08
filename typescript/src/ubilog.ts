@@ -828,6 +828,7 @@ function deno_to_address(deno_addr: Deno.Addr): Address {
   }
 }
 
+// TODO: use parser from lib
 function string_to_address(address_txt: string): Address {
   const addr_split = address_txt.split(":");
   const port_txt = address_txt[-1];
