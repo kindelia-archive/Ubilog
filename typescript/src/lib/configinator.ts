@@ -1,6 +1,4 @@
-import * as R from "./func/result.ts";
-
-import { compose2 } from "./func/mod.ts";
+import * as R from "./functional/result.ts";
 import { JSONObject, JSONValue } from "./json.ts";
 
 type SResult<T> = R.Result<T, string>;
@@ -56,7 +54,7 @@ export namespace Validators {
       const r_err: SResult<bigint> = R.Err(`'${x} is not an integer.`);
       if (x.length == 0) return r_err;
       try {
-        const num = BigInt(x); // TODO: try/catch
+        const num = BigInt(x);
         return R.Ok(num);
       } catch (err) {
         return r_err;

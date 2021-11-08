@@ -2,7 +2,7 @@
 import { parse as parse_args } from "https://deno.land/std@0.113.0/flags/mod.ts";
 import * as path from "https://deno.land/std@0.110.0/path/mod.ts";
 
-import { break_list, default_or_convert, drop_while } from "./lib/func/mod.ts";
+import { break_list, default_or_convert, drop_while } from "./lib/functional/mod.ts";
 import { is_json_object, JSONValue } from "./lib/json.ts";
 import { ensure_text_file, get_dir_with_base } from "./lib/files.ts";
 import { bits_mask } from "./lib/numbers.ts";

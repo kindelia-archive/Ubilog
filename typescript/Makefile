@@ -4,6 +4,9 @@ all:
 fmt:
 	deno fmt -c deno.json ./src/
 
+lint:
+	deno lint -c deno.json --unstable ./src/
+
 cache:
 	deno cache -c deno.json --unstable ./src/ubilog.ts
 

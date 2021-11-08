@@ -7,8 +7,16 @@
   - JSON validators
   - loader for initial peers
 
+- document lib/
+
+- refactor and split ubilog.ts file
+
 - test networking
   - metrics endpoint?
   - run on Oracle?
 
 - slices
+
+- native mining module in Rust
+  - FFI
+  - bindgen?

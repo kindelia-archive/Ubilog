@@ -1,5 +1,4 @@
 import { config_resolver, ConfigSchema, Validators as V } from "./lib/configinator.ts";
-import { is_json_object, JSONValue } from "./lib/json.ts";
 import { bits_mask } from "./lib/numbers.ts";
 
 type ConfigTypes = {
@@ -28,7 +27,7 @@ const config_schema: ConfigSchema<ConfigTypes> = {
     flag: "display",
     default: false,
   },
-  // TODO initial peers
+  // TODO: initial peers config
 };
 
 export const resolve_config = config_resolver<ConfigTypes>(config_schema);

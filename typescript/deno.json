@@ -1,7 +1,16 @@
 {
+  "lint": {
+    "files": {
+      "exclude": ["src/keccak256.js"]
+    },
+    "rules": {
+      "exclude": ["camelcase"]
+    }
+  },
   "fmt": {
     "files": {
-      "include": ["typescript/*.ts"]
+      "include": ["src/*.ts"],
+      "exclude": ["src/keccak256.ts"]
     },
     "options": {
       "lineWidth": 100,
