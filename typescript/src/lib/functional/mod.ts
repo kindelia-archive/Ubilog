@@ -29,7 +29,7 @@ export const default_or_convert = <T, R>(
   convert: (x: T) => R,
   valid: (y: R) => boolean = (y: R) => true,
 ) =>
-  (default_val: R) =>
+  (default_val: R | null) =>
     (x: T | null | undefined): R | null => {
       if (x == null) {
         return default_val;
