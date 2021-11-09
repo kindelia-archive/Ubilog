@@ -1,16 +1,16 @@
 export type Ok<T> = { _: "Ok"; value: T };
 export type Err<E> = { _: "Err"; err: E };
 
-export type Result<T, E> = (Ok<T> | Err<E>) & ResultBase<E, T>;
+export type Result<E, T> = (Ok<T> | Err<E>) & ResultBase<E, T>;
 
 type ResultBase<E, T> = {
   then: ThenFn<E, T>;  // TODO: should this be called `map` ?
 };
-type KleisliFn<E, T, R> = (x: T) => Result<R, E>;
-type ThenFn<E, T> = <R>(fn: KleisliFn<E, T, R>) => Result<R, E>;
+type KleisliFn<E, T, R> = (x: T) => Result<E, R>;
+type ThenFn<E, T> = <R>(this: Result<E, T>, fn: KleisliFn<E, T, R>) => Result<E, R>;
 
-export const Ok = <T, E>(value: T): Result<T, E> => ({ ...base, _: "Ok", value: value });
-export const Err = <T, E>(err: E): Result<T, E> => ({ ...base, _: "Err", err: err });
+export const Ok = <E, T>(value: T): Result<E, T> => ({ ...base, _: "Ok", value: value });
+export const Err = <E, T>(err: E): Result<E, T> => ({ ...base, _: "Err", err: err });
 
 export default Result;
 
@@ -20,8 +20,8 @@ const base = {
   then,
 };
 
-const map = <T, R, E>(fn: (x: T) => Result<R, E>) =>
-  (r: Result<T, E>): Result<R, E> => {
+const map = <E, T, R>(fn: (x: T) => Result<E, R>) =>
+  (r: Result<E, T>): Result<E, R> => {
     switch (r._) {
       case "Ok":
         return fn(r.value);
@@ -31,8 +31,8 @@ const map = <T, R, E>(fn: (x: T) => Result<R, E>) =>
   };
 
 export function then<E, T, R>(
-  this: Result<T, E>,
+  this: Result<E, T>,
   fn: KleisliFn<E, T, R>,
-): Result<R, E> {
+): Result<E, R> {
   return map(fn)(this);
 }
