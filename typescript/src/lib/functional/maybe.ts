@@ -4,9 +4,9 @@ export type Err = { _: "Nothing" };
 export type Maybe<T> = (Just<T> | Err) & MaybeBase<T>;
 
 export type MaybeBase<T> = {
-    then: ThenFn<T>,  // TODO: should this be called `map` ?
-    unwrap: UnwrapFn<T>,
-}
+  then: ThenFn<T>; // TODO: should this be called `map` ?
+  unwrap: UnwrapFn<T>;
+};
 type KleisliFn<T, R> = (x: T) => Maybe<R>;
 type ThenFn<T> = <R>(this: Maybe<T>, fn: KleisliFn<T, R>) => Maybe<R>;
 type UnwrapFn<T> = (this: Maybe<T>, err?: string) => T;
@@ -29,7 +29,7 @@ export const map = <T, R>(fn: (x: T) => Maybe<R>) =>
       case "Just":
         return fn(r.value);
       case "Nothing":
-        return Nothing(); 
+        return Nothing();
     }
   };
 
@@ -42,7 +42,7 @@ export function then<T, R>(
 
 export function unwrap<T>(this: Maybe<T>, err?: string): T {
   if (this._ == "Nothing") {
-    throw new Error(err)
+    throw new Error(err);
   }
   return this.value;
-}  
+}

@@ -21,11 +21,11 @@ export namespace Validators {
   export const address = address_validator;
 
   export const yes_no = new BaseValidator<boolean>(
-    (x: string) => {
+    (x: string): SResult<boolean> => {
       if (["y", "yes", "true", "1"].includes(x)) {
-        return R.Ok(true);
+        return R.Ok(true as boolean);
       } else if (["n", "no", "false", "0"].includes(x)) {
-        return R.Ok(false);
+        return R.Ok(false as boolean);
       }
       return R.Err(`'${x}' is not a valid boolean`);
     },

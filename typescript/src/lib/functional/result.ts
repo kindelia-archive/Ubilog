@@ -4,7 +4,7 @@ export type Err<E> = { _: "Err"; err: E };
 export type Result<E, T> = (Ok<T> | Err<E>) & ResultBase<E, T>;
 
 type ResultBase<E, T> = {
-  then: ThenFn<E, T>;  // TODO: should this be called `map` ?
+  then: ThenFn<E, T>; // TODO: should this be called `map` ?
 };
 type KleisliFn<E, T, R> = (x: T) => Result<E, R>;
 type ThenFn<E, T> = <R>(this: Result<E, T>, fn: KleisliFn<E, T, R>) => Result<E, R>;

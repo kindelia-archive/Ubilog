@@ -7,8 +7,9 @@ import { is_json_object } from "./lib/json.ts";
 import { get_dir_with_base } from "./lib/files.ts";
 import { bits_mask } from "./lib/numbers.ts";
 
+import T, { Bits, Tag, U16, U256, U64, U8 } from "./types.ts";
 import { keccak256 } from "./keccak256.ts";
-import { GetEnv, resolve_config, load_config_file } from "./config.ts";
+import { GetEnv, load_config_file, resolve_config } from "./config.ts";
 
 // Configuration:
 // ~/.ubilog/config
@@ -37,33 +38,31 @@ type Nat = bigint;
 
 type U8 = F64;
 type U16 = F64;
-type U64 = Nat;
-type U256 = Nat;
 
-type Hash = string; // 0x0000000000000000000000000000000000000000000000000000000000000000
-type Body = Uint8Array; // 1280 bytes
+type Hash = string & Tag<"Hash">; // 0x0000000000000000000000000000000000000000000000000000000000000000
+type Body = Uint8Array; // 1280 bytes // TODO: add tag
+
+type HashDict<T> = Record<Hash, T>;
 
 type Block = {
   prev: Hash;
-  time: U256;
+  time: T.U256;
   body: Body; // 1280 bytes
 };
 
 type Chain = {
-  block: Dict<Block>;
-  children: Dict<Array<Hash>>;
-  pending: Dict<Array<Block>>;
-  work: Dict<Nat>;
-  height: Dict<Nat>;
-  target: Dict<Nat>;
-  seen: Dict<1>;
-  tip: [U64, Hash];
+  block: HashDict<Block>;
+  children: HashDict<Array<Hash>>;
+  pending: HashDict<Array<Block>>;
+  work: HashDict<Nat>;
+  height: HashDict<Nat>;
+  target: HashDict<Nat>;
+  seen: HashDict<1>;
+  tip: [T.U64, Hash];
 };
 
 // Network
 // -------
-
-type Bits = string;
 
 type IPv4 = { ctor: "IPv4"; port: U16; val0: U8; val1: U8; val2: U8; val3: U8 };
 type IPv6 = { ctor: "IPv6"; port: U16; segments: number[] };
@@ -82,7 +81,7 @@ type HNode<A> = { ctor: "HNode"; value: [bigint, A]; child: List<Heap<A>> };
 type Empty<A> = { ctor: "Empty" };
 type Heap<A> = Empty<A> | HNode<A>;
 
-type Slice = { work: U64; data: Bits };
+type Slice = { work: T.U64; data: T.Bits };
 
 type PutPeers = { ctor: "PutPeers"; peers: Address[] };
 type PutBlock = { ctor: "PutBlock"; block: Block };
@@ -102,9 +101,9 @@ type Node = {
   //slices: Heap<Slice>
 };
 
-function HASH(hash: Hash) {
+function HASH(hash: string): Hash {
   if (/^0x[0-9A-Fa-f]{64}$/.test(hash)) {
-    return hash;
+    return hash as Hash;
   } else {
     throw new Error("INCORRECT HASH FORMAT.");
   }
@@ -220,7 +219,7 @@ function list_to_array<T>(list: List<T>): Array<T> {
 // Bits
 // ----
 
-function bits_to_uint8array(bits: Bits): Uint8Array {
+function bits_to_uint8array(bits: T.Bits): Uint8Array {
   if (bits.length < 2 ** 16) {
     const buff = new Uint8Array(2 + Math.ceil(bits.length / 8));
     bits = serialize_bits(bits);
@@ -241,13 +240,14 @@ function bits_to_uint8array(bits: Bits): Uint8Array {
   throw new Error("bit string too large");
 }
 
-function uint8array_to_bits(buff: Uint8Array): Bits {
+function uint8array_to_bits(buff: Uint8Array): T.Bits {
   const size = (buff[0] || 0) + (buff[1] || 0) * 256;
-  let bits = "";
+  let bits = "" as T.Bits;
   for (let i = 2; i < buff.length; ++i) {
     const val = buff[i] || 0;
     for (let j = 0; j < 8 && bits.length < size; ++j) {
-      bits += (val >>> j) & 1 ? "1" : "0";
+      const bit = (val >>> j) & 1 ? "1" : "0";
+      bits = Bits.push(bit)(bits);
     }
   }
   return bits;
@@ -288,7 +288,7 @@ const HashZero: Hash = HASH(
 //   return new Uint8Array(bytes);
 // }
 
-function u256_to_uint8array(value: U256): Uint8Array {
+function u256_to_uint8array(value: T.U256): Uint8Array {
   const bytes: F64[] = [];
   for (let i = 0; i < 32; ++i) {
     bytes.push(Number((value >> BigInt((32 - i - 1) * 8)) % 0x100n));
@@ -297,7 +297,7 @@ function u256_to_uint8array(value: U256): Uint8Array {
 }
 
 function hash_to_uint8array(hash: Hash): Uint8Array {
-  return u256_to_uint8array(BigInt(hash));
+  return u256_to_uint8array(U256.mask(BigInt(hash)));
 }
 
 function compute_difficulty(target: Nat): Nat {
@@ -361,19 +361,18 @@ function mine(
   block: Block,
   target: Nat,
   max_attempts: F64,
-  node_time: U64,
-  secret_key: U256 = 0n,
-): [Block, U64] | null {
+  node_time: T.U64,
+  secret_key: T.U256 = U256.zero,
+): [Block, T.U64] | null {
   for (let i = 0n; i < max_attempts; ++i) {
     const [rand_0, rand_1] = crypto.getRandomValues(new Uint32Array(2));
-    const rand = BigInt(rand_0) | (BigInt(rand_1) << 32n);
+    const rand = U64.mask(BigInt(rand_0) | (BigInt(rand_1) << 32n));
     const nonce = (secret_key << 64n) | rand;
-    const bits = BigInt(hash_uint8array(u256_to_uint8array(nonce))) & MASK_192;
-    const time = ((node_time & MASK_64) << 192n) | bits;
+    const bits = BigInt(hash_uint8array(u256_to_uint8array(U256.mask(nonce)))) & MASK_192;
+    const time = U256.mask(((node_time & MASK_64) << 192n) | bits);
     block = { ...block, time };
     const hash = hash_block(block);
     if (BigInt(hash) > target) {
-      //console.log("nice", hash, target);
       return [block, rand];
     }
   }
@@ -426,23 +425,23 @@ const EmptyBody: Body = new Uint8Array(BODY_SIZE);
 
 const BlockZero: Block = {
   prev: HashZero,
-  time: 0n,
+  time: U256.zero,
   body: EmptyBody,
 };
 
 function initial_chain(): Chain {
   const block: Dict<Block> = { [HashZero]: BlockZero };
   const children: Dict<Array<Hash>> = { [HashZero]: [] };
-  const pending: Dict<Array<Block>> = {};
-  const work: Dict<Nat> = { [HashZero]: 0n };
+  const pending: Record<Hash, Array<Block>> = {};
+  const work: Dict<T.U64> = { [HashZero]: U64.zero };
   const height: Dict<Nat> = { [HashZero]: 0n };
   const target: Dict<Nat> = { [HashZero]: INITIAL_TARGET };
   const seen: Dict<1> = {};
-  const tip: [U256, Hash] = [0n, HashZero];
+  const tip: [T.U64, Hash] = [U64.zero, HashZero];
   return { block, children, pending, work, height, target, seen, tip };
 }
 
-function add_block(chain: Chain, block: Block, time: U64) {
+function add_block(chain: Chain, block: Block, time: T.U64) {
   const must_add: Block[] = [block];
   while (must_add.length > 0) {
     const block = must_add.pop() || BlockZero;
@@ -496,7 +495,7 @@ function add_block(chain: Chain, block: Block, time: U64) {
             }
             // Refresh tip
             if (chain.work[bhash] > chain.tip[0]) {
-              chain.tip = [chain.work[bhash], bhash];
+              chain.tip = [U64.mask(chain.work[bhash]), bhash];
             }
           }
           // Registers this block as a child
@@ -591,77 +590,84 @@ function show_chain(chain: Chain, _lines: number) {
 // Serialization
 // -------------
 
-function serialize_fixed_len(size: F64, value: Nat): Bits {
+function serialize_fixed_len(size: number, value: Nat): T.Bits {
   if (size > 0) {
     const head = value % 2n === 0n ? "0" : "1";
-    const tail = serialize_fixed_len(size - 1, value / 2n);
-    return head + tail;
+    const tail = serialize_fixed_len(size - 1, value / 2n); // ?? >> 1n ?
+    return Bits.push_front(head)(tail);
   } else {
-    return "";
+    return Bits.empty;
   }
 }
 
-function deserialize_fixed_len(size: F64, bits: Bits): [Bits, Nat] {
+function deserialize_fixed_len(size: number, bits: T.Bits): [T.Bits, Nat] {
   if (size === 0) {
     return [bits, 0n];
   } else {
     if (bits[0] === "0") {
       let x;
-      [bits, x] = deserialize_fixed_len(size - 1, bits.slice(1));
+      [bits, x] = deserialize_fixed_len(size - 1, Bits.slice(1)(bits));
       return [bits, x * 2n];
     } else if (bits[0] === "1") {
       let x;
-      [bits, x] = deserialize_fixed_len(size - 1, bits.slice(1));
+      [bits, x] = deserialize_fixed_len(size - 1, Bits.slice(1)(bits));
       return [bits, x * 2n + 1n];
     } else {
-      return ["", 0n];
+      return [Bits.empty, 0n];
     }
   }
 }
 
-function serialize_list<T>(item: (x: T) => Bits, list: List<T>): Bits {
+function serialize_list<T>(item: (x: T) => T.Bits, list: List<T>): T.Bits {
   switch (list.ctor) {
     case "Nil":
-      return "0";
+      const bit0 = "0";
+      return Bits.from(bit0);
     case "Cons":
-      return "1" + item(list.head) + serialize_list(item, list.tail);
+      const bit1 = "1";
+      const head = item(list.head);
+      const tail = serialize_list(item, list.tail);
+      const ser = Bits.concat(head, tail);
+      return Bits.push_front(bit1)(ser);
   }
 }
 
 function deserialize_list<T>(
-  item: (x: Bits) => [Bits, T],
-  bits: Bits,
-): [Bits, List<T>] {
+  item: (x: T.Bits) => [T.Bits, T],
+  bits: T.Bits,
+): [T.Bits, List<T>] {
   if (bits[0] === "0") {
-    return [bits.slice(1), nil()];
+    return [Bits.slice(1)(bits), nil()];
   } else if (bits[0] === "1") {
     let head, tail;
-    [bits, head] = item(bits.slice(1));
+    [bits, head] = item(Bits.slice(1)(bits));
     [bits, tail] = deserialize_list(item, bits);
     return [bits, cons(head, tail)];
   } else {
-    return ["", nil()];
+    return [Bits.empty, nil()];
   }
 }
 
-function serialize_address(address: Address): Bits {
+function serialize_address(address: Address): T.Bits {
   switch (address.ctor) {
     case "IPv4": {
+      const bit0 = "0";
       const val0 = serialize_fixed_len(8, BigInt(address.val0));
       const val1 = serialize_fixed_len(8, BigInt(address.val1));
       const val2 = serialize_fixed_len(8, BigInt(address.val2));
       const val3 = serialize_fixed_len(8, BigInt(address.val3));
       const port = serialize_fixed_len(16, BigInt(address.port));
-      return "0" + val0 + val1 + val2 + val3 + port;
+      return Bits.push_front(bit0)(Bits.concat(val0, val1, val2, val3, port));
     }
   }
-  return "";
+  throw new Error("FAILURE: unknown address type");
 }
 
-function deserialize_address(bits: Bits): [Bits, Address] {
+function deserialize_address(bits: T.Bits): [T.Bits, Address] {
   if (bits[0] === "0") {
     let val0, val1, val2, val3, port;
-    [bits, val0] = deserialize_fixed_len(8, bits.slice(1));
+    bits = Bits.slice(1)(bits);
+    [bits, val0] = deserialize_fixed_len(8, bits);
     [bits, val1] = deserialize_fixed_len(8, bits);
     [bits, val2] = deserialize_fixed_len(8, bits);
     [bits, val3] = deserialize_fixed_len(8, bits);
@@ -669,6 +675,7 @@ function deserialize_address(bits: Bits): [Bits, Address] {
     return [
       bits,
       {
+        // TODO: refactor
         ctor: "IPv4",
         val0: Number(val0),
         val1: Number(val1),
@@ -682,39 +689,40 @@ function deserialize_address(bits: Bits): [Bits, Address] {
   }
 }
 
-function serialize_bits(data: Bits): Bits {
+function serialize_bits(data: T.Bits): T.Bits {
   const size = serialize_fixed_len(16, BigInt(data.length));
-  return size + data;
+  return Bits.concat(size, data);
 }
 
-//function deserialize_bits(bits: Bits): [Bits, Bits] {
+//function deserialize_bits(bits: T.Bits): [T.Bits, T.Bits] {
 //  let size, data;
 //  [bits, size] = deserialize_fixed_len(16, bits);
 //  [bits, data] = [bits.slice(Number(size)), bits.slice(0, Number(size))];
 //  return [bits, data];
 //}
 
-//function serialize_slice(slice: Slice) : Bits {
+//function serialize_slice(slice: Slice) : T.Bits {
 //var work = serialize_fixed_len(64, slice.work);
 //var data = serialize_bits(slice.data);
 //return work + data;
 //}
 
-//function deserialize_slice(bits: Bits) : [Bits, Slice] {
+//function deserialize_slice(bits: T.Bits) : [T.Bits, Slice] {
 //var [bits,work] = deserialize_fixed_len(64, bits);
 //var [bits,data] = deserialize_bits(bits);
 //return [bits, {work, data}];
 //}
 
-function serialize_uint8array(bytes: number, array: Uint8Array): Bits {
-  let bits = "";
+function serialize_uint8array(bytes: number, array: Uint8Array): T.Bits {
+  let bits = Bits.empty;
   for (let i = 0; i < bytes; ++i) {
-    bits += serialize_fixed_len(8, BigInt(array[i]));
+    const ser = serialize_fixed_len(8, BigInt(array[i]));
+    bits = Bits.concat(bits, ser);
   }
   return bits;
 }
 
-function deserialize_uint8array(bytes: number, bits: Bits): [Bits, Uint8Array] {
+function deserialize_uint8array(bytes: number, bits: T.Bits): [T.Bits, Uint8Array] {
   const vals = [];
   for (let i = 0; i < bytes; ++i) {
     let val;
@@ -724,80 +732,85 @@ function deserialize_uint8array(bytes: number, bits: Bits): [Bits, Uint8Array] {
   return [bits, new Uint8Array(vals)];
 }
 
-function serialize_hash(hash: Hash): Bits {
+function serialize_hash(hash: Hash): T.Bits {
   return serialize_fixed_len(256, BigInt(HASH(hash)));
 }
 
-function deserialize_hash(bits: Bits): [Bits, Hash] {
+function deserialize_hash(bits: T.Bits): [T.Bits, Hash] {
   let nat;
   [bits, nat] = deserialize_fixed_len(256, bits);
   return [bits, HASH("0x" + pad_left(64, "0", nat.toString(16)))];
 }
 
-function serialize_block(block: Block): Bits {
+function serialize_block(block: Block): T.Bits {
   const prev = serialize_hash(block.prev);
   const time = serialize_fixed_len(256, block.time);
   const body = serialize_uint8array(BODY_SIZE, block.body);
-  return prev + time + body;
+  return Bits.concat(prev, time, body);
 }
 
-function deserialize_block(bits: Bits): [Bits, Block] {
+function deserialize_block(bits: T.Bits): [T.Bits, Block] {
   let prev, time, body;
   [bits, prev] = deserialize_hash(bits);
   [bits, time] = deserialize_fixed_len(256, bits);
   [bits, body] = deserialize_uint8array(BODY_SIZE, bits);
+  time = U256.mask(time);
   return [bits, { prev, time, body }];
 }
 
-function serialize_message(message: Message): Bits {
+function serialize_message(message: Message): T.Bits {
   switch (message.ctor) {
     case "PutPeers": {
+      const code0 = Bits.from("0000");
       const peers = serialize_list(
         serialize_address,
         array_to_list(message.peers),
       );
-      return "0000" + peers;
+      return Bits.concat(code0, peers);
     }
     case "PutBlock": {
+      const code1 = Bits.from("1000");
       const block = serialize_block(message.block);
-      return "1000" + block;
+      return Bits.concat(code1, block);
     }
     case "AskBlock": {
+      const code2 = Bits.from("0100");
       const bhash = serialize_hash(message.bhash);
-      return "0100" + bhash;
+      return Bits.concat(code2, bhash);
     }
-      //case "PutSlice": {
-      //const slice = serialize_slice(message.slice);
-      //return "11" + slice;
-      //}
+    // case "PutSlice": {
+    //   const code3 = Bits.from("1100");
+    //   const slice = serialize_slice(message.slice);
+    //   return Bits.concat(code3, slice);
+    // }
   }
-  return "";
 }
 
-function deserialize_message(bits: Bits): [Bits, Message] {
+function deserialize_message(bits: T.Bits): [T.Bits, Message] {
+  const rest = Bits.slice(4)(bits);
   switch (bits.slice(0, 4)) {
     case "0000": {
       let peers;
-      [bits, peers] = deserialize_list(deserialize_address, bits.slice(2));
+      [bits, peers] = deserialize_list(deserialize_address, rest);
       return [bits, { ctor: "PutPeers", peers: list_to_array(peers) }];
     }
     case "1000": {
       let block;
-      [bits, block] = deserialize_block(bits.slice(2));
+      [bits, block] = deserialize_block(rest);
       return [bits, { ctor: "PutBlock", block }];
     }
     case "0100": {
       let bhash;
-      [bits, bhash] = deserialize_hash(bits.slice(2));
+      [bits, bhash] = deserialize_hash(rest);
       return [bits, { ctor: "AskBlock", bhash }];
     }
-      // case "11": {
-      //   let slice;
-      //   [bits, slice] = deserialize_slice(bits.slice(2));
-      //   return [bits, { ctor: "PutSlice", slice }];
-      // }
+    // case "11": {
+    //   let slice;
+    //     [bits, slice] = deserialize_slice(rest);
+    //     return [bits, { ctor: "PutSlice", slice }];
+    // }
   }
-  throw "Bad message deserialization.";
+  throw "bad message deserialization";
 }
 
 // Networking
@@ -910,7 +923,7 @@ function udp_receive<T>(
 
 export function start_node(
   base_dir: string,
-  { port = DEFAULT_PORT, display = false },
+  { port = DEFAULT_PORT, display = false, secret_key = U256.zero },
 ) {
   const get_dir = get_dir_with_base(base_dir);
 
@@ -940,8 +953,8 @@ export function start_node(
 
   // Returns the current time
   // TODO: get peers median?
-  function get_time(): U64 {
-    return now();
+  function get_time(): T.U64 {
+    return U64.mask(now());
   }
 
   function send(to: Address, message: Message) {
@@ -1005,7 +1018,7 @@ export function start_node(
       tip_target,
       max_hashes,
       get_time(),
-      0n,
+      secret_key,
     );
     //console.log("[miner] Difficulty: " + compute_difficulty(tip_target) + " hashes/block. Power: " + max_hashes + " hashes.");
     if (mined !== null) {
@@ -1033,7 +1046,8 @@ export function start_node(
 
   // Requests missing blocks
   function requester() {
-    for (const bhash in node.chain.pending) {
+    for (const _bhash in node.chain.pending) {
+      const bhash = _bhash as Hash;
       let count = 0;
       if (!node.chain.seen[bhash]) {
         for (const peer of all_peers()) {
@@ -1076,7 +1090,8 @@ export function start_node(
     const pending = node.chain.pending;
     let pending_size = 0;
     let pending_seen = 0;
-    for (const bhash in pending) {
+    for (const _bhash in pending) {
+      const bhash = _bhash as Hash;
       if (node.chain.seen[bhash]) {
         pending_seen += 1;
       }

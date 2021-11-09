@@ -59,7 +59,9 @@ export const address_validator: Validator<[Address, number?]> = new BaseValidato
       if (segments.some((x) => !valid_segment(x))) {
         return R.Err(`invalid address: ${ip_txt}`);
       }
-      return R.Ok([{ _: "IPv6", segments: segments }, port]);
+      const ipv6: Address = {_: "IPv6", segments}
+      const ipv6_port: [Address, number?] = [ipv6, port];
+      return R.Ok(ipv6_port);
     } else {
       const octets = ip_txt.split(".").map(Number);
       if (!check_len_4(octets)) {
@@ -68,7 +70,9 @@ export const address_validator: Validator<[Address, number?]> = new BaseValidato
       if (octets.some((x) => !valid_octet(x))) {
         return R.Err(`invalid address: ${ip_txt}`);
       }
-      return R.Ok([{ _: "IPv4", octets: octets }, port]);
+      const ipv4: Address = {_: "IPv4", octets}
+      const ipv4_port: [Address, number?] = [ipv4, port];
+      return R.Ok(ipv4_port);
     }
   },
 );
