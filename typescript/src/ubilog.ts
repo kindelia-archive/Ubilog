@@ -2,7 +2,11 @@
 import { parse as parse_args } from "https://deno.land/std@0.113.0/flags/mod.ts";
 import * as path from "https://deno.land/std@0.110.0/path/mod.ts";
 
-import { break_list, default_or_convert, drop_while } from "./lib/functional/mod.ts";
+import {
+  break_list,
+  default_or_convert,
+  drop_while,
+} from "./lib/functional/mod.ts";
 import { is_json_object } from "./lib/json.ts";
 import { get_dir_with_base } from "./lib/files.ts";
 import { bits_mask } from "./lib/numbers.ts";
@@ -42,7 +46,7 @@ type U16 = F64;
 type Hash = string & Tag<"Hash">; // 0x0000000000000000000000000000000000000000000000000000000000000000
 type Body = Uint8Array; // 1280 bytes // TODO: add tag
 
-type HashDict<T> = Record<Hash, T>;
+type HashMap<T> = Map<Hash, T>;
 
 type Block = {
   prev: Hash;
@@ -51,13 +55,13 @@ type Block = {
 };
 
 type Chain = {
-  block: HashDict<Block>;
-  children: HashDict<Array<Hash>>;
-  pending: HashDict<Array<Block>>;
-  work: HashDict<Nat>;
-  height: HashDict<Nat>;
-  target: HashDict<Nat>;
-  seen: HashDict<1>;
+  block: HashMap<Block>;
+  children: HashMap<Array<Hash>>;
+  pending: HashMap<Array<Block>>;
+  work: HashMap<Nat>;
+  height: HashMap<Nat>;
+  target: HashMap<Nat>;
+  seen: HashMap<true>;
   tip: [T.U64, Hash];
 };
 
@@ -85,7 +89,7 @@ type Slice = { work: T.U64; data: T.Bits };
 
 type PutPeers = { ctor: "PutPeers"; peers: Address[] };
 type PutBlock = { ctor: "PutBlock"; block: Block };
-type AskBlock = { ctor: "AskBlock"; bhash: Hash };
+type AskBlock = { ctor: "AskBlock"; b_hash: Hash };
 type PutSlices = { ctor: "PutSlices"; slices: Slice[] };
 type Message = PutPeers | PutBlock | AskBlock;
 
@@ -113,6 +117,19 @@ function HASH(hash: string): Hash {
 // ==========
 
 // Util
+
+function assert_non_null<T>(value: T | null | undefined): asserts value is T {
+  if (value == null) {
+    throw "FAILURE: null or undefined value";
+  }
+}
+
+type Gettable<K, T> = { get: (k: K) => T | undefined };
+function get_assert<K, T>(m: Gettable<K, T>, k: K): T {
+  const v = m.get(k);
+  assert_non_null(v);
+  return v;
+}
 
 function now(): bigint {
   return BigInt(Date.now());
@@ -241,10 +258,10 @@ function bits_to_uint8array(bits: T.Bits): Uint8Array {
 }
 
 function uint8array_to_bits(buff: Uint8Array): T.Bits {
-  const size = (buff[0] || 0) + (buff[1] || 0) * 256;
+  const size = (buff[0] ?? 0) + (buff[1] ?? 0) * 256;
   let bits = "" as T.Bits;
   for (let i = 2; i < buff.length; ++i) {
-    const val = buff[i] || 0;
+    const val = buff[i] ?? 0;
     for (let j = 0; j < 8 && bits.length < size; ++j) {
       const bit = (val >>> j) & 1 ? "1" : "0";
       bits = Bits.push(bit)(bits);
@@ -277,7 +294,7 @@ function uint8array_to_bits(buff: Uint8Array): T.Bits {
 // -------
 
 const HashZero: Hash = HASH(
-  "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "0x0000000000000000000000000000000000000000000000000000000000000000"
 );
 
 // function u64_to_uint8array(value: U64): Uint8Array {
@@ -341,7 +358,7 @@ function hash_block(block: Block): Hash {
         ...hash_to_uint8array(block.prev),
         ...u256_to_uint8array(block.time),
         ...block.body,
-      ]),
+      ])
     );
   }
 }
@@ -362,13 +379,14 @@ function mine(
   target: Nat,
   max_attempts: F64,
   node_time: T.U64,
-  secret_key: T.U256 = U256.zero,
+  secret_key: T.U256 = U256.zero
 ): [Block, T.U64] | null {
   for (let i = 0n; i < max_attempts; ++i) {
     const [rand_0, rand_1] = crypto.getRandomValues(new Uint32Array(2));
     const rand = U64.mask(BigInt(rand_0) | (BigInt(rand_1) << 32n));
     const nonce = (secret_key << 64n) | rand;
-    const bits = BigInt(hash_uint8array(u256_to_uint8array(U256.mask(nonce)))) & MASK_192;
+    const bits =
+      BigInt(hash_uint8array(u256_to_uint8array(U256.mask(nonce)))) & MASK_192;
     const time = U256.mask(((node_time & MASK_64) << 192n) | bits);
     block = { ...block, time };
     const hash = hash_block(block);
@@ -389,7 +407,7 @@ function mine(
 //}
 //var i = 0
 //while (slices.ctor !== "Empty" && i < BODY_SIZE * 8) {
-//var bits : string = (heap_head(slices) || [0,""])[1]
+//var bits : string = (heap_head(slices) ?? [0,""])[1]
 ////console.log("got", bits);
 //for (var k = 0; k < bits.length && i < BODY_SIZE * 8; ++k, ++i) {
 ////console.log("- bit_" + i + ": " + bits[k]);
@@ -430,13 +448,13 @@ const BlockZero: Block = {
 };
 
 function initial_chain(): Chain {
-  const block: Dict<Block> = { [HashZero]: BlockZero };
-  const children: Dict<Array<Hash>> = { [HashZero]: [] };
-  const pending: Record<Hash, Array<Block>> = {};
-  const work: Dict<T.U64> = { [HashZero]: U64.zero };
-  const height: Dict<Nat> = { [HashZero]: 0n };
-  const target: Dict<Nat> = { [HashZero]: INITIAL_TARGET };
-  const seen: Dict<1> = {};
+  const block: HashMap<Block> = new Map([[HashZero, BlockZero]]);
+  const children: HashMap<Array<Hash>> = new Map([[HashZero, []]]);
+  const pending: HashMap<Array<Block>> = new Map();
+  const work: HashMap<T.U64> = new Map([[HashZero, U64.zero]]);
+  const height: HashMap<Nat> = new Map([[HashZero, 0n]]);
+  const target: HashMap<Nat> = new Map([[HashZero, INITIAL_TARGET]]);
+  const seen: HashMap<true> = new Map();
   const tip: [T.U64, Hash] = [U64.zero, HashZero];
   return { block, children, pending, work, height, target, seen, tip };
 }
@@ -444,73 +462,77 @@ function initial_chain(): Chain {
 function add_block(chain: Chain, block: Block, time: T.U64) {
   const must_add: Block[] = [block];
   while (must_add.length > 0) {
-    const block = must_add.pop() || BlockZero;
-    const btime = block.time >> 192n;
-    if (btime < BigInt(time) + DELAY_TOLERANCE) {
-      const bhash = hash_block(block);
-      if (chain.block[bhash] === undefined) {
-        const phash = block.prev;
+    const block = must_add.pop() ?? BlockZero;
+    const b_time = block.time >> 192n;
+    if (b_time < BigInt(time) + DELAY_TOLERANCE) {
+      const b_hash = hash_block(block);
+      if (chain.block.get(b_hash) === undefined) {
+        const p_hash = block.prev;
         // If previous block is available, add the block
         // TODO: extract function to add mined blocks?
-        if (chain.block[phash] !== undefined) {
-          const work = get_hash_work(bhash);
+        if (chain.block.get(p_hash) !== undefined) {
+          const work = get_hash_work(b_hash);
           // const ptime = chain.block
-          chain.block[bhash] = block;
-          chain.work[bhash] = 0n;
-          chain.height[bhash] = 0n;
-          chain.target[bhash] = 0n;
-          chain.children[bhash] = [];
+          chain.block.set(b_hash, block);
+          chain.work.set(b_hash, 0n);
+          chain.height.set(b_hash, 0n);
+          chain.target.set(b_hash, 0n);
+          chain.children.set(b_hash, []);
           // If the block is valid
-          const has_enough_work = BigInt(bhash) >= chain.target[phash];
-          const advances_time = btime > chain.block[phash].time >> 192n;
+          const p_block = get_assert(chain.block, p_hash);
+          const p_target = get_assert(chain.target, p_hash);
+          const has_enough_work = BigInt(b_hash) >= p_target;
+          const advances_time = b_time > p_block.time >> 192n;
           if (has_enough_work && advances_time) {
-            chain.work[bhash] = chain.work[phash] + work;
-            if (phash !== HashZero) {
-              chain.height[bhash] = chain.height[phash] + 1n;
+            const p_work = get_assert(chain.work, p_hash);
+            chain.work.set(b_hash, p_work + work);
+            if (p_hash !== HashZero) {
+              const p_height = get_assert(chain.height, p_hash);
+              chain.height.set(b_hash, p_height + 1n);
             }
             if (
-              chain.height[bhash] > 0n &&
-              chain.height[bhash] % BLOCKS_PER_PERIOD === 0n
+              get_assert(chain.height, b_hash) > 0n &&
+              get_assert(chain.height, b_hash) % BLOCKS_PER_PERIOD === 0n
             ) {
-              let checkpoint_hash = phash;
+              let checkpoint_hash = p_hash;
               for (let i = 0n; i < BLOCKS_PER_PERIOD - 1n; ++i) {
-                checkpoint_hash = chain.block[checkpoint_hash].prev;
+                checkpoint_hash = get_assert(chain.block, checkpoint_hash).prev;
               }
               const period_time = Number(
-                btime - (chain.block[checkpoint_hash].time >> 192n),
+                b_time - (get_assert(chain.block, checkpoint_hash).time >> 192n)
               );
-              const last_target = chain.target[phash];
+              const last_target = get_assert(chain.target, p_hash);
               const scale = BigInt(
-                Math.floor((2 ** 32 * Number(TIME_PER_PERIOD)) / period_time),
+                Math.floor((2 ** 32 * Number(TIME_PER_PERIOD)) / period_time)
               );
               const next_target = compute_next_target(last_target, scale);
-              chain.target[bhash] = next_target;
+              chain.target.set(b_hash, next_target);
               //console.log("A period should last   " + TIME_PER_PERIOD + " seconds.");
               //console.log("The last period lasted " + period_time + " seconds.");
               //console.log("The last difficulty was " + compute_difficulty(last_target) + " hashes per block.");
               //console.log("The next difficulty is  " + compute_difficulty(next_target) + " hashes per block.");
               // Keep old difficulty
             } else {
-              chain.target[bhash] = chain.target[phash];
+              chain.target.set(b_hash, get_assert(chain.target, p_hash));
             }
             // Refresh tip
-            if (chain.work[bhash] > chain.tip[0]) {
-              chain.tip = [U64.mask(chain.work[bhash]), bhash];
+            if (get_assert(chain.work, b_hash) > chain.tip[0]) {
+              chain.tip = [U64.mask(get_assert(chain.work, b_hash)), b_hash];
             }
           }
           // Registers this block as a child
-          chain.children[phash].push(bhash);
+          get_assert(chain.children, p_hash).push(b_hash);
           // Add all blocks that were waiting for this block
-          for (const pending of chain.pending[bhash] || []) {
+          for (const pending of chain.pending.get(b_hash) ?? []) {
             must_add.push(pending);
           }
-          delete chain.pending[bhash];
+          chain.pending.delete(b_hash);
           // Otherwise, add this block to the previous block's pending list
-        } else if (chain.seen[bhash] === undefined) {
-          chain.pending[phash] = chain.pending[phash] || [];
-          chain.pending[phash].push(block);
+        } else if (chain.seen.get(b_hash) === undefined) {
+          chain.pending.set(p_hash, chain.pending.get(p_hash) ?? []);
+          get_assert(chain.pending, p_hash).push(block);
         }
-        chain.seen[bhash] = 1;
+        chain.seen.set(b_hash, true);
       }
     }
   }
@@ -518,11 +540,14 @@ function add_block(chain: Chain, block: Block, time: T.U64) {
 
 function get_longest_chain(chain: Chain): Array<Block> {
   const longest = [];
-  let bhash = chain.tip[1];
-  while (chain.block[bhash] !== undefined && bhash !== HashZero) {
-    const block = chain.block[bhash];
+  let b_hash = chain.tip[1];
+  while (true) {
+    const block = chain.block.get(b_hash);
+    if (block == undefined || b_hash === HashZero) {
+      break;
+    }
     longest.push(block);
-    bhash = block.prev;
+    b_hash = block.prev;
   }
   return longest.reverse();
 }
@@ -547,15 +572,15 @@ function get_address_hostname(address: Address): string {
 }
 
 function show_block(chain: Chain, block: Block, index: number) {
-  const bhash = hash_block(block);
-  const work = chain.work[bhash] || 0n;
+  const b_hash = hash_block(block);
+  const work = chain.work.get(b_hash) ?? 0n;
   const show_index = BigInt(index).toString();
   const show_time = (block.time >> 192n).toString(10);
   const show_body = [].slice
     .call(block.body, 0, 32)
     .map((x: number) => pad_left(2, "0", x.toString(16)))
     .join("");
-  const show_hash = bhash;
+  const show_hash = b_hash;
   const show_work = work.toString();
   return (
     "" +
@@ -582,7 +607,8 @@ function show_chain(chain: Chain, _lines: number) {
     text += show_block(chain, blocks[i], i) + "\n";
   }
   if (blocks.length > 1) {
-    text += show_block(chain, blocks[blocks.length - 1], blocks.length - 1) + "\n";
+    text +=
+      show_block(chain, blocks[blocks.length - 1], blocks.length - 1) + "\n";
   }
   return text;
 }
@@ -634,7 +660,7 @@ function serialize_list<T>(item: (x: T) => T.Bits, list: List<T>): T.Bits {
 
 function deserialize_list<T>(
   item: (x: T.Bits) => [T.Bits, T],
-  bits: T.Bits,
+  bits: T.Bits
 ): [T.Bits, List<T>] {
   if (bits[0] === "0") {
     return [Bits.slice(1)(bits), nil()];
@@ -722,7 +748,10 @@ function serialize_uint8array(bytes: number, array: Uint8Array): T.Bits {
   return bits;
 }
 
-function deserialize_uint8array(bytes: number, bits: T.Bits): [T.Bits, Uint8Array] {
+function deserialize_uint8array(
+  bytes: number,
+  bits: T.Bits
+): [T.Bits, Uint8Array] {
   const vals = [];
   for (let i = 0; i < bytes; ++i) {
     let val;
@@ -764,7 +793,7 @@ function serialize_message(message: Message): T.Bits {
       const code0 = Bits.from("0000");
       const peers = serialize_list(
         serialize_address,
-        array_to_list(message.peers),
+        array_to_list(message.peers)
       );
       return Bits.concat(code0, peers);
     }
@@ -775,8 +804,8 @@ function serialize_message(message: Message): T.Bits {
     }
     case "AskBlock": {
       const code2 = Bits.from("0100");
-      const bhash = serialize_hash(message.bhash);
-      return Bits.concat(code2, bhash);
+      const b_hash = serialize_hash(message.b_hash);
+      return Bits.concat(code2, b_hash);
     }
     // case "PutSlice": {
     //   const code3 = Bits.from("1100");
@@ -800,9 +829,9 @@ function deserialize_message(bits: T.Bits): [T.Bits, Message] {
       return [bits, { ctor: "PutBlock", block }];
     }
     case "0100": {
-      let bhash;
-      [bits, bhash] = deserialize_hash(rest);
-      return [bits, { ctor: "AskBlock", bhash }];
+      let b_hash;
+      [bits, b_hash] = deserialize_hash(rest);
+      return [bits, { ctor: "AskBlock", b_hash }];
     }
     // case "11": {
     //   let slice;
@@ -819,7 +848,8 @@ function deserialize_message(bits: T.Bits): [T.Bits, Message] {
 const DEFAULT_PORT: number = 16936;
 
 const valid_port = (port: number) => !isNaN(port) && port >= 1 && port <= 65535;
-const valid_octet = (octet: number) => !isNaN(octet) && octet >= 0 && octet <= 255;
+const valid_octet = (octet: number) =>
+  !isNaN(octet) && octet >= 0 && octet <= 255;
 
 function address_to_deno(address: Address): Deno.Addr {
   return {
@@ -899,13 +929,13 @@ function udp_send(udp: Deno.DatagramConn, address: Address, message: Message) {
   //console.log("send", address, message);
   udp.send(
     bits_to_uint8array(serialize_message(message)),
-    address_to_deno(address),
+    address_to_deno(address)
   );
 }
 
 function udp_receive<T>(
   udp: Deno.DatagramConn,
-  callback: (address: Address, message: Message) => T,
+  callback: (address: Address, message: Message) => T
 ) {
   setTimeout(async () => {
     for await (const [buff, deno_addr] of udp) {
@@ -923,7 +953,7 @@ function udp_receive<T>(
 
 export function start_node(
   base_dir: string,
-  { port = DEFAULT_PORT, display = false, secret_key = U256.zero },
+  { port = DEFAULT_PORT, display = false, secret_key = U256.zero }
 ) {
   const get_dir = get_dir_with_base(base_dir);
 
@@ -933,20 +963,16 @@ export function start_node(
 
   let MINED = 0;
 
-  // Loads config
-
   const peers: Dict<Peer> = {};
 
   // Initializes the node
 
-  //console.log(peers);
-
   const chain: Chain = initial_chain();
-  //var slices : Heap<Slice> = {ctor: "Empty"};
+  // var slices : Heap<Slice> = {ctor: "Empty"};
   const node: Node = { port, peers, chain };
 
   let body: Body = EmptyBody;
-  //body[0] = (port % 42000);
+  // body[0] = (port % 42000); // DEBUG
 
   // Initializes sockets
   const udp = udp_init(port);
@@ -984,8 +1010,7 @@ export function start_node(
         add_block(node.chain, message.block, get_time());
         break;
       case "AskBlock": {
-        //console.log("AskBlock", message.bhash);
-        const block = node.chain.block[message.bhash];
+        const block = node.chain.block.get(message.b_hash);
         if (block) {
           send(sender, { ctor: "PutBlock", block });
           //console.log("send asked block");
@@ -999,10 +1024,10 @@ export function start_node(
           break;
         }
       }
-        //case "PutSlice":
-        //var work = get_hash_work(hash_slice(message.slice));
-        //node.slices = heap_insert([work, message.slice], node.slices);
-        //break;
+      //case "PutSlice":
+      //var work = get_hash_work(hash_slice(message.slice));
+      //node.slices = heap_insert([work, message.slice], node.slices);
+      //break;
     }
   }
   udp_receive(udp, handle_message);
@@ -1010,15 +1035,15 @@ export function start_node(
   // Attempts to mine a new block
   function miner() {
     const tip_hash = node.chain.tip[1];
-    // const tip_block = node.chain.block[tip_hash];
-    const tip_target = node.chain.target[tip_hash];
+    const tip_target = node.chain.target.get(tip_hash);
+    assert_non_null(tip_target);
     const max_hashes = MINER_HASHRATE / MINER_CPS;
     const mined = mine(
       { ...BlockZero, body, prev: tip_hash },
       tip_target,
       max_hashes,
       get_time(),
-      secret_key,
+      secret_key
     );
     //console.log("[miner] Difficulty: " + compute_difficulty(tip_target) + " hashes/block. Power: " + max_hashes + " hashes.");
     if (mined !== null) {
@@ -1026,18 +1051,19 @@ export function start_node(
       MINED += 1;
       add_block(node.chain, new_block, get_time());
 
-      const bhash = hash_block(new_block);
+      const b_hash = hash_block(new_block);
       const dir = get_dir(DIR_MINED);
       const rand_txt = pad_left((64 / 8) * 2, "0", rand.toString(16));
       // TODO: one file per secret_key? store secret key hash with each rand (much redundancy)?
-      Deno.writeTextFileSync(dir + "/" + bhash, rand_txt);
+      Deno.writeTextFileSync(dir + "/" + b_hash, rand_txt);
       //displayer();
     }
   }
 
   // Sends our tip block to random peers
   function gossiper() {
-    const block = node.chain.block[node.chain.tip[1]];
+    const tip_hash = node.chain.tip[1];
+    const block = get_assert(node.chain.block, tip_hash);
     for (const peer of all_peers()) {
       //console.log("send PutBlock", hash_block(block));
       send(peer.address, { ctor: "PutBlock", block });
@@ -1046,16 +1072,12 @@ export function start_node(
 
   // Requests missing blocks
   function requester() {
-    for (const _bhash in node.chain.pending) {
-      const bhash = _bhash as Hash;
-      let count = 0;
-      if (!node.chain.seen[bhash]) {
+    for (const b_hash of node.chain.pending.keys()) {
+      if (!node.chain.seen.get(b_hash)) {
         for (const peer of all_peers()) {
-          send(peer.address, { ctor: "AskBlock", bhash });
-          ++count;
+          send(peer.address, { ctor: "AskBlock", b_hash });
         }
       }
-      //console.log("asked " + count + " pending blocks");
     }
   }
 
@@ -1066,17 +1088,19 @@ export function start_node(
       const bits = serialize_block(chain[i]);
       const buff = bits_to_uint8array(bits);
       const indx = pad_left(16, "0", i.toString(16));
-      const bdir = get_dir(DIR_BLOCKS);
-      Deno.writeFileSync(bdir + "/" + indx, buff);
+      const b_dir = get_dir(DIR_BLOCKS);
+      Deno.writeFileSync(b_dir + "/" + indx, buff);
     }
   }
 
   // Loads saved blocks
   function loader() {
-    const bdir = get_dir(DIR_BLOCKS);
-    const files = Array.from(Deno.readDirSync(bdir)).sort((x, y) => x.name > y.name ? 1 : -1);
+    const b_dir = get_dir(DIR_BLOCKS);
+    const files = Array.from(Deno.readDirSync(b_dir)).sort((x, y) =>
+      x.name > y.name ? 1 : -1
+    );
     for (const file of files) {
-      const buff = Deno.readFileSync(bdir + "/" + file.name);
+      const buff = Deno.readFileSync(b_dir + "/" + file.name);
       const [_bits, block] = deserialize_block(uint8array_to_bits(buff));
       add_block(node.chain, block, get_time());
     }
@@ -1084,15 +1108,15 @@ export function start_node(
 
   // Displays status
   function displayer() {
-    const target = node.chain.target[node.chain.tip[1]];
-    const diff = compute_difficulty(target);
+    const tip_hash = node.chain.tip[1];
+    const tip_target = get_assert(node.chain.target, tip_hash);
+    const diff = compute_difficulty(tip_target);
     const rate = (diff * 1000n) / TIME_PER_BLOCK;
     const pending = node.chain.pending;
     let pending_size = 0;
     let pending_seen = 0;
-    for (const _bhash in pending) {
-      const bhash = _bhash as Hash;
-      if (node.chain.seen[bhash]) {
+    for (const b_hash of pending.keys()) {
+      if (node.chain.seen.get(b_hash)) {
         pending_seen += 1;
       }
       pending_size += 1;
@@ -1103,22 +1127,22 @@ export function start_node(
     console.log("");
     console.log("- current_time  : " + get_time() + " UTC");
     console.log(
-      "- online_peers  : " + Object.keys(node.peers).length + " peers",
+      "- online_peers  : " + Object.keys(node.peers).length + " peers"
     );
     console.log(
-      "- chain_height  : " + get_longest_chain(node.chain).length + " blocks",
+      "- chain_height  : " + get_longest_chain(node.chain).length + " blocks"
     );
     console.log(
       "- database      : " +
         (Object.keys(node.chain.block).length - 1) +
-        " blocks",
+        " blocks"
     );
     console.log(
       "- pending       : " +
         pending_size +
         " blocks (" +
         pending_seen +
-        " downloaded)",
+        " downloaded)"
     );
     console.log("- total_mined   : " + MINED + " blocks");
     console.log("- own_hash_rate : " + MINER_HASHRATE + " hashes / second");
@@ -1146,7 +1170,7 @@ export function start_node(
 //  const target = compute_target(1000n);
 //  const max_attempts = 999999;
 //  const do_mine = (prev: Hash) =>
-//    mine({ ...BlockZero, prev }, target, max_attempts, BigInt(Date.now())) ||
+//    mine({ ...BlockZero, prev }, target, max_attempts, BigInt(Date.now())) ??
 //    BlockZero;
 //  const block_0 = do_mine(HashZero);
 //  const block_1 = do_mine(hash_block(block_0));
@@ -1182,8 +1206,9 @@ export function main(args: string[], get_env: GetEnv): void {
     boolean: ["display"],
   });
 
-  // TODO: fix ENV("HOME") || ""
-  const base_dir = get_env("UBILOG_DIR") || path.join(get_env("HOME") || "", ".ubilog");
+  // TODO: fix ENV("HOME") ?? ""
+  const base_dir =
+    get_env("UBILOG_DIR") ?? path.join(get_env("HOME") ?? "", ".ubilog");
   const config_file_data = load_config_file(base_dir);
   if (!is_json_object(config_file_data)) {
     throw new Error(`invalid config file, content is not a JSON object`);

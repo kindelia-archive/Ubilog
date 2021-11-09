@@ -59,7 +59,7 @@ export const address_validator: Validator<[Address, number?]> = new BaseValidato
       if (segments.some((x) => !valid_segment(x))) {
         return R.Err(`invalid address: ${ip_txt}`);
       }
-      const ipv6: Address = {_: "IPv6", segments}
+      const ipv6: Address = { _: "IPv6", segments };
       const ipv6_port: [Address, number?] = [ipv6, port];
       return R.Ok(ipv6_port);
     } else {
@@ -70,7 +70,7 @@ export const address_validator: Validator<[Address, number?]> = new BaseValidato
       if (octets.some((x) => !valid_octet(x))) {
         return R.Err(`invalid address: ${ip_txt}`);
       }
-      const ipv4: Address = {_: "IPv4", octets}
+      const ipv4: Address = { _: "IPv4", octets };
       const ipv4_port: [Address, number?] = [ipv4, port];
       return R.Ok(ipv4_port);
     }

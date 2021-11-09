@@ -4,15 +4,11 @@
     "deno.unstable": true,
     "deno.config": "typescript/deno.json",
     "cSpell.words": [
-        "bdir",
-        "bhash",
-        "btime",
         "confignator",
         "deno",
         "displayer",
         "hashrate",
         "Kleisli",
-        "phash",
         "Ubilog"
     ]
 }
