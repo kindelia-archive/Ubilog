@@ -1,7 +1,7 @@
 import { break_list, default_or_convert, drop_while } from "../../functional/mod.ts";
 import * as R from "../../functional/result.ts";
 
-import { Address, Quadruple, Octuple, SResult, Validator } from "../types.ts";
+import { Address, Octuple, Quadruple, SResult, Validator } from "../types.ts";
 import { BaseValidator } from "./base.ts";
 
 const valid_port = (port: number) => !isNaN(port) && port >= 1 && port <= 0xffff;
@@ -24,7 +24,7 @@ export const address_validator: Validator<[Address, number?]> = new BaseValidato
     const ip_port_re = /((?:\d{1,3}(?:\.\d{1,3}){3,3})|(?:\[[0-9a-fA-F\:]+\]))(?:\:(\d+))?/;
     const match = address_txt.match(ip_port_re);
     if (match == null) {
-      return R.Err(`'${address_txt}' is not a valid address`)
+      return R.Err(`'${address_txt}' is not a valid address`);
     }
     const ip_txt = match[1];
     const port_txt = match[2];
@@ -33,7 +33,7 @@ export const address_validator: Validator<[Address, number?]> = new BaseValidato
     if (port_txt !== undefined) {
       port = Number(port_txt);
       if (!valid_port(port)) {
-        return R.Err(`'${port_txt}' is not a valid port`)
+        return R.Err(`'${port_txt}' is not a valid port`);
       }
     }
 

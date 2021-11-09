@@ -3,21 +3,18 @@ import { parse as parse_args } from "https://deno.land/std@0.113.0/flags/mod.ts"
 import * as path from "https://deno.land/std@0.110.0/path/mod.ts";
 
 import { break_list, default_or_convert, drop_while } from "./lib/functional/mod.ts";
-import { is_json_object, JSONValue } from "./lib/json.ts";
-import { ensure_text_file, get_dir_with_base } from "./lib/files.ts";
+import { is_json_object } from "./lib/json.ts";
+import { get_dir_with_base } from "./lib/files.ts";
 import { bits_mask } from "./lib/numbers.ts";
 
 import { keccak256 } from "./keccak256.ts";
-import { resolve_config } from "./config.ts";
-
-// TODO
-// - slices
+import { GetEnv, resolve_config, load_config_file } from "./config.ts";
 
 // Configuration:
 // ~/.ubilog/config
 // Output:
 // ~/.ubilog/data/blocks/HASH
-// ~/.ubilog/data/mined/HASH  // TODO: mined rands on JSONL file(s)
+// ~/.ubilog/data/mined/HASH
 
 // Constants
 // ---------
@@ -518,7 +515,6 @@ function add_block(chain: Chain, block: Block, time: U64) {
       }
     }
   }
-  //Deno.exit();
 }
 
 function get_longest_chain(chain: Chain): Array<Block> {
@@ -1165,24 +1161,7 @@ function err_usage_exit(x: any): never {
   Deno.exit(1);
 }
 
-const DEFAULT_CONFIG_FILE = `
-{
-  "peers": ["127.0.0.1:42000", "127.0.0.1:42001", "127.0.0.1:42002"]
-}
-`;
-
-function load_config_file(base_dir: string): JSONValue {
-  const config_path = `${base_dir}/config`;
-  ensure_text_file(config_path, DEFAULT_CONFIG_FILE);
-  const config_file = Deno.readTextFileSync(config_path);
-  const config_data = JSON.parse(config_file);
-  return config_data;
-}
-
-// TODO: move stuff to lib/config.ts
-type GetEnv = (name: string) => string | undefined;
-
-export function main(args: string[], get_env: GetEnv = Deno.env.get): void {
+export function main(args: string[], get_env: GetEnv): void {
   const parsed_flags = parse_args(args, {
     string: ["port"],
     boolean: ["display"],
@@ -1192,7 +1171,7 @@ export function main(args: string[], get_env: GetEnv = Deno.env.get): void {
   const base_dir = get_env("UBILOG_DIR") || path.join(get_env("HOME") || "", ".ubilog");
   const config_file_data = load_config_file(base_dir);
   if (!is_json_object(config_file_data)) {
-    throw new Error(`invalid config file, it's not a JSON object`);
+    throw new Error(`invalid config file, content is not a JSON object`);
   }
 
   const config = resolve_config(parsed_flags, config_file_data, get_env);

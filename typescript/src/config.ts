@@ -1,12 +1,16 @@
+import { bits_mask } from "./lib/numbers.ts";
+import { JSONValue } from "./lib/json.ts";
+import { ensure_text_file } from "./lib/files.ts";
 import { config_resolver, ConfigSchema, Validators as V } from "./lib/confignator/mod.ts";
 import { Address } from "./lib/confignator/mod.ts";
-import { bits_mask } from "./lib/numbers.ts";
+
+export type { GetEnv } from "./lib/confignator/mod.ts";
 
 type ConfigTypes = {
   net_port: number;
   display: boolean;
   secret_key: bigint;
-  peers: [Address, number?][]; // aaaaaaaa
+  peers: [Address, number?][];
 };
 
 const config_schema: ConfigSchema<ConfigTypes> = {
@@ -29,12 +33,23 @@ const config_schema: ConfigSchema<ConfigTypes> = {
     default: false,
   },
   peers: {
-    // TODO test
     validator: V.list(V.address),
     env: "PEERS",
     flag: "peers",
     default: [],
   },
 };
+
+export const DEFAULT_CONFIG = {
+  peers: ["127.0.0.1:42000", "127.0.0.1:42001", "127.0.0.1:42002"],
+};
+
+export function load_config_file(base_dir: string): JSONValue {
+  const config_path = `${base_dir}/config.json`;
+  ensure_text_file(config_path, JSON.stringify(DEFAULT_CONFIG));
+  const config_file = Deno.readTextFileSync(config_path);
+  const config_data = JSON.parse(config_file);
+  return config_data;
+}
 
 export const resolve_config = config_resolver<ConfigTypes>(config_schema);

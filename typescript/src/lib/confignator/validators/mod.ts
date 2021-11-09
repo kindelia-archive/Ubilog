@@ -22,9 +22,9 @@ export namespace Validators {
 
   export const yes_no = new BaseValidator<boolean>(
     (x: string) => {
-      if (["y", "yes", "true"].includes(x)) {
+      if (["y", "yes", "true", "1"].includes(x)) {
         return R.Ok(true);
-      } else if (["n", "no", "false"].includes(x)) {
+      } else if (["n", "no", "false", "0"].includes(x)) {
         return R.Ok(false);
       }
       return R.Err(`'${x}' is not a valid boolean`);

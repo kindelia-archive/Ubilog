@@ -1,6 +1,8 @@
 import { JSONValue } from "../json.ts";
 import * as R from "../functional/result.ts";
 
+export type GetEnv = (name: string) => string | undefined;
+
 export type SResult<T> = R.Result<T, string>;
 
 export type Quadruple<T> = [T, T, T, T];

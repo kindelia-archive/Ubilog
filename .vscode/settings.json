@@ -11,6 +11,7 @@
         "deno",
         "displayer",
         "hashrate",
+        "Kleisli",
         "phash",
         "Ubilog"
     ]

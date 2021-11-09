@@ -11,6 +11,7 @@
   - metrics endpoint?
   - run on Oracle?
 
+- mined rands on JSONL file(s)
 - refactor and split ubilog.ts file
 
 - slices
