@@ -590,15 +590,17 @@ function deserialize_fixed_len(size: number, bits: T.Bits): [T.Bits, Nat] {
 
 function serialize_list<T>(item: (x: T) => T.Bits, list: List<T>): T.Bits {
   switch (list.ctor) {
-    case "Nil":
+    case "Nil": {
       const bit0 = "0";
       return Bits.from(bit0);
-    case "Cons":
+    }
+    case "Cons": {
       const bit1 = "1";
       const head = item(list.head);
       const tail = serialize_list(item, list.tail);
       const ser = Bits.concat(head, tail);
       return Bits.push_front(bit1)(ser);
+    }
   }
 }
 
@@ -921,7 +923,7 @@ export function start_node(
   // var slices : Heap<Slice> = {ctor: "Empty"};
   const node: Node = { port, peers, chain };
 
-  let body: Body = EmptyBody;
+  const body: Body = EmptyBody;
   body[0] = (port >> 8) % 0xFF; // DEBUG
   body[1] = (port) % 0xFF; // DEBUG
 
@@ -1104,13 +1106,13 @@ export function start_node(
     console.log(show_chain(node.chain, 16));
   }
 
-  function display_tip() {
-    const tip = chain.tip;
-    const tip_hash = tip[1];
-    // const tip_block = get_assert(chain.block, tip_hash);
-    const tip_height = get_assert(chain.height, tip_hash);
-    console.log(tip_height, "->", tip_hash);
-  }
+  // function display_tip() {
+  //   const tip = chain.tip;
+  //   const tip_hash = tip[1];
+  //   // const tip_block = get_assert(chain.block, tip_hash);
+  //   const tip_height = get_assert(chain.height, tip_hash);
+  //   console.log(tip_height, "->", tip_hash);
+  // }
 
   loader();
 
@@ -1143,19 +1145,19 @@ export function start_node(
 //}
 //test_0();
 
-function err(x: any) {
-  console.error(`ERROR: ${x}`);
-}
+// function err(x: string) {
+//   console.error(`ERROR: ${x}`);
+// }
 
-function show_usage() {
-  console.log(`Usage:  ubilog-ts [--port PORT]`);
-}
+// function show_usage() {
+//   console.log(`Usage:  ubilog-ts [--port PORT]`);
+// }
 
-function err_usage_exit(x: any): never {
-  err(x);
-  show_usage();
-  Deno.exit(1);
-}
+// function err_usage_exit(x: string): never {
+//   err(x);
+//   show_usage();
+//   Deno.exit(1);
+// }
 
 export function main(args: string[], get_env: GetEnv): void {
   const parsed_flags = parse_args(args, {
