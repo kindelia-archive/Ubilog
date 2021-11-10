@@ -24,12 +24,14 @@ export const config_resolver = <R>(schema: ConfigSchema<R>) =>
     config?: JSONObject,
     get_env?: (v: string) => string | undefined,
   ): R => {
-    const result: any = {};
+    const result: Partial<R> = {};
     for (const key in schema) {
       const item_schema = schema[key];
 
-      // Handle flags
       const flag_name = item_schema.flag;
+      const env_name = item_schema.env;
+
+      // Handle flags
       if (flags && flag_name) {
         const flag_val = flags[flag_name];
         if (flag_val) {
@@ -45,7 +47,6 @@ export const config_resolver = <R>(schema: ConfigSchema<R>) =>
       }
 
       // Handle environment variables
-      const env_name = item_schema.env;
       if (get_env && env_name) {
         const env_val = get_env(env_name);
         if (env_val) {
@@ -80,5 +81,5 @@ export const config_resolver = <R>(schema: ConfigSchema<R>) =>
       result[key] = item_schema.default;
     }
 
-    return result;
+    return result as R;
   };

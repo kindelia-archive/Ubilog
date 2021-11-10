@@ -6,7 +6,7 @@ export type GetEnv = (name: string) => string | undefined;
 export type SResult<T> = R.Result<string, T>;
 
 export type Quadruple<T> = [T, T, T, T];
-export type Sextuple<T> = [T, T, T, T, T, T];
+// export type Sextuple<T> = [T, T, T, T, T, T];
 export type Octuple<T> = [T, T, T, T, T, T, T, T];
 
 export type Octets = Quadruple<number>;

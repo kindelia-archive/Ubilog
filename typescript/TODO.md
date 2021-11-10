@@ -1,5 +1,6 @@
 # TODO
 
+- load initial peers into node state
 - test networking
 - implement IPv6
 - slices processing

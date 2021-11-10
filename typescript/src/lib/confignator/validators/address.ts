@@ -1,4 +1,4 @@
-import { break_list, default_or_convert, drop_while } from "../../functional/mod.ts";
+import { break_list, drop_while } from "../../functional/mod.ts";
 import * as R from "../../functional/result.ts";
 
 import { Address, Octuple, Quadruple, SResult, Validator } from "../types.ts";
@@ -14,6 +14,10 @@ function check_len_4<T>(arr: T[]): arr is Quadruple<T> {
 function check_len_8<T>(arr: T[]): arr is Octuple<T> {
   return arr.length === 8;
 }
+
+// TODO: refactor using AddressPort
+// TODO: add Address only Validator
+// TODO: separate optional port Validator
 
 export const address_validator: Validator<[Address, number?]> = new BaseValidator<
   [Address, number?]

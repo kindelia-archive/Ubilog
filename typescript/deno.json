@@ -1,7 +1,7 @@
 {
   "lint": {
     "files": {
-      "exclude": ["src/keccak256.js"]
+      "exclude": ["src/keccak256.ts"]
     },
     "rules": {
       "exclude": ["camelcase", "no-namespace"]
