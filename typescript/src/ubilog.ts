@@ -2,11 +2,7 @@
 import { parse as parse_args } from "https://deno.land/std@0.113.0/flags/mod.ts";
 import * as path from "https://deno.land/std@0.110.0/path/mod.ts";
 
-import {
-  break_list,
-  default_or_convert,
-  drop_while,
-} from "./lib/functional/mod.ts";
+import { break_list, default_or_convert, drop_while } from "./lib/functional/mod.ts";
 import { is_json_object } from "./lib/json.ts";
 import { get_dir_with_base } from "./lib/files.ts";
 import { bits_mask } from "./lib/numbers.ts";
@@ -44,7 +40,7 @@ type U8 = F64;
 type U16 = F64;
 
 type Hash = string & Tag<"Hash">; // 0x0000000000000000000000000000000000000000000000000000000000000000
-type Body = Uint8Array; // 1280 bytes // TODO: add tag
+type Body = Uint8Array & Tag<"Body">; // 1280 bytes // TODO: add tag
 
 type HashMap<T> = Map<Hash, T>;
 
@@ -91,7 +87,7 @@ type PutPeers = { ctor: "PutPeers"; peers: Address[] };
 type PutBlock = { ctor: "PutBlock"; block: Block };
 type AskBlock = { ctor: "AskBlock"; b_hash: Hash };
 type PutSlices = { ctor: "PutSlices"; slices: Slice[] };
-type Message = PutPeers | PutBlock | AskBlock;
+type Message = PutPeers | PutBlock | AskBlock | PutSlices;
 
 type Mail = {
   sent_by: Peer;
@@ -140,7 +136,7 @@ function now(): bigint {
 
 const MASK_64 = bits_mask(64n);
 const MASK_192 = bits_mask(192n);
-const MASK_256 = bits_mask(256n);
+// const MASK_256 = bits_mask(256n);
 
 function next_power_of_two(x: number): number {
   return x <= 1 ? x : 2 ** (Math.floor(Math.log(x - 1) / Math.log(2)) + 1);
@@ -184,55 +180,6 @@ function list_to_array<T>(list: List<T>): Array<T> {
   return array;
 }
 
-// Heap
-// ----
-
-// function heap_merge<A>(a: Heap<A>, b: Heap<A>): Heap<A> {
-//   if (a.ctor === "Empty") {
-//     return b
-//   } else if (b.ctor === "Empty") {
-//     return a
-//   } else if (a.value[0] > b.value[0]) {
-//     return {ctor: "HNode", value: a.value, child: {ctor: "Cons", head: b, tail: a.child}}
-//   } else {
-//     return {ctor: "HNode", value: b.value, child: {ctor: "Cons", head: a, tail: b.child}}
-//   }
-// }
-
-// function heap_merge_pairs<A>(pairs: List<Heap<A>>): Heap<A> {
-//   switch (pairs.ctor) {
-//     case "Nil": return {ctor: "Empty"}
-//     case "Cons": switch (pairs.tail.ctor) {
-//       case "Nil": return pairs.head
-//       case "Cons": return heap_merge(heap_merge(pairs.head, pairs.tail.head), heap_merge_pairs(pairs.tail.tail))
-//     }
-//   }
-// }
-
-// function heap_insert<A>(value: [bigint,A], heap: Heap<A>): Heap<A> {
-//   return heap_merge({ctor: "HNode", value: value, child: {ctor: "Nil"}}, heap)
-// }
-
-// function heap_head<A>(heap: Heap<A>): [bigint,A] | null {
-//   switch (heap.ctor) {
-//     case "HNode": return heap.value
-//     case "Empty": return null
-//   }
-// }
-
-// function heap_tail<A>(heap: Heap<A>): Heap<A> {
-//   switch (heap.ctor) {
-//     case "HNode": return heap_merge_pairs(heap.child)
-//     case "Empty": return heap
-//   }
-// }
-
-//insert :: Ord a => a -> Heap a -> Heap a
-//insert x = merge (Heap x [])
-
-//deleteMin :: Ord a => Heap a -> Heap a
-//deleteMin (Heap x hs) = mergePairs hs
-
 // Bits
 // ----
 
@@ -240,7 +187,6 @@ function bits_to_uint8array(bits: T.Bits): Uint8Array {
   if (bits.length < 2 ** 16) {
     const buff = new Uint8Array(2 + Math.ceil(bits.length / 8));
     bits = serialize_bits(bits);
-    //console.log("->", bits)
     for (let i = 0; i < bits.length; i += 8) {
       let numb = 0;
       for (let j = 0; j < 8; ++j) {
@@ -254,7 +200,7 @@ function bits_to_uint8array(bits: T.Bits): Uint8Array {
     }
     return buff;
   }
-  throw new Error("bit string too large");
+  throw "bit string too large";
 }
 
 function uint8array_to_bits(buff: Uint8Array): T.Bits {
@@ -294,7 +240,7 @@ function uint8array_to_bits(buff: Uint8Array): T.Bits {
 // -------
 
 const HashZero: Hash = HASH(
-  "0x0000000000000000000000000000000000000000000000000000000000000000"
+  "0x0000000000000000000000000000000000000000000000000000000000000000",
 );
 
 // function u64_to_uint8array(value: U64): Uint8Array {
@@ -358,7 +304,7 @@ function hash_block(block: Block): Hash {
         ...hash_to_uint8array(block.prev),
         ...u256_to_uint8array(block.time),
         ...block.body,
-      ])
+      ]),
     );
   }
 }
@@ -379,14 +325,13 @@ function mine(
   target: Nat,
   max_attempts: F64,
   node_time: T.U64,
-  secret_key: T.U256 = U256.zero
+  secret_key: T.U256 = U256.zero,
 ): [Block, T.U64] | null {
   for (let i = 0n; i < max_attempts; ++i) {
     const [rand_0, rand_1] = crypto.getRandomValues(new Uint32Array(2));
     const rand = U64.mask(BigInt(rand_0) | (BigInt(rand_1) << 32n));
     const nonce = (secret_key << 64n) | rand;
-    const bits =
-      BigInt(hash_uint8array(u256_to_uint8array(U256.mask(nonce)))) & MASK_192;
+    const bits = BigInt(hash_uint8array(u256_to_uint8array(U256.mask(nonce)))) & MASK_192;
     const time = U256.mask(((node_time & MASK_64) << 192n) | bits);
     block = { ...block, time };
     const hash = hash_block(block);
@@ -439,7 +384,7 @@ const TIME_PER_PERIOD: Nat = TIME_PER_BLOCK * BLOCKS_PER_PERIOD;
 // initial target of 256 hashes per block
 const INITIAL_TARGET: Nat = compute_target(256n);
 
-const EmptyBody: Body = new Uint8Array(BODY_SIZE);
+const EmptyBody: Body = new Uint8Array(BODY_SIZE) as Body;
 
 const BlockZero: Block = {
   prev: HashZero,
@@ -499,11 +444,11 @@ function add_block(chain: Chain, block: Block, time: T.U64) {
                 checkpoint_hash = get_assert(chain.block, checkpoint_hash).prev;
               }
               const period_time = Number(
-                b_time - (get_assert(chain.block, checkpoint_hash).time >> 192n)
+                b_time - (get_assert(chain.block, checkpoint_hash).time >> 192n),
               );
               const last_target = get_assert(chain.target, p_hash);
               const scale = BigInt(
-                Math.floor((2 ** 32 * Number(TIME_PER_PERIOD)) / period_time)
+                Math.floor((2 ** 32 * Number(TIME_PER_PERIOD)) / period_time),
               );
               const next_target = compute_next_target(last_target, scale);
               chain.target.set(b_hash, next_target);
@@ -596,19 +541,18 @@ function show_block(chain: Chain, block: Block, index: number) {
   );
 }
 
-function show_chain(chain: Chain, _lines: number) {
+function show_chain(chain: Chain, lines: number) {
   // const count = Math.floor(lines / 2);
   const blocks = get_longest_chain(chain);
   const lim = next_power_of_two(blocks.length);
-  const add = lim > 32 ? lim / 32 : 1;
+  const add = lim > lines ? lim / lines : 1;
   let text =
     "       # | time          | hash                                                             | head                                                             | work\n";
   for (let i = 0; i < blocks.length - 1; i += add) {
     text += show_block(chain, blocks[i], i) + "\n";
   }
   if (blocks.length > 1) {
-    text +=
-      show_block(chain, blocks[blocks.length - 1], blocks.length - 1) + "\n";
+    text += show_block(chain, blocks[blocks.length - 1], blocks.length - 1) + "\n";
   }
   return text;
 }
@@ -660,7 +604,7 @@ function serialize_list<T>(item: (x: T) => T.Bits, list: List<T>): T.Bits {
 
 function deserialize_list<T>(
   item: (x: T.Bits) => [T.Bits, T],
-  bits: T.Bits
+  bits: T.Bits,
 ): [T.Bits, List<T>] {
   if (bits[0] === "0") {
     return [Bits.slice(1)(bits), nil()];
@@ -720,24 +664,27 @@ function serialize_bits(data: T.Bits): T.Bits {
   return Bits.concat(size, data);
 }
 
-//function deserialize_bits(bits: T.Bits): [T.Bits, T.Bits] {
-//  let size, data;
-//  [bits, size] = deserialize_fixed_len(16, bits);
-//  [bits, data] = [bits.slice(Number(size)), bits.slice(0, Number(size))];
-//  return [bits, data];
-//}
+function deserialize_bits(bits: T.Bits): [T.Bits, T.Bits] {
+  let size_: bigint, data: T.Bits;
+  [bits, size_] = deserialize_fixed_len(16, bits);
+  const size = Number(size_);
+  [bits, data] = [Bits.slice(size)(bits), Bits.slice(0, size)(bits)];
+  return [bits, data];
+}
 
-//function serialize_slice(slice: Slice) : T.Bits {
-//var work = serialize_fixed_len(64, slice.work);
-//var data = serialize_bits(slice.data);
-//return work + data;
-//}
+function serialize_slice(slice: Slice): T.Bits {
+  const work = serialize_fixed_len(64, slice.work);
+  const data = serialize_bits(slice.data);
+  return Bits.concat(work, data);
+}
 
-//function deserialize_slice(bits: T.Bits) : [T.Bits, Slice] {
-//var [bits,work] = deserialize_fixed_len(64, bits);
-//var [bits,data] = deserialize_bits(bits);
-//return [bits, {work, data}];
-//}
+function deserialize_slice(bits: T.Bits): [T.Bits, Slice] {
+  let work_: bigint, data: T.Bits;
+  [bits, work_] = deserialize_fixed_len(64, bits);
+  [bits, data] = deserialize_bits(bits);
+  const work = U64.mask(work_); // TODO: fix size mask redundancy, refactor `deserialize_fixed_len`;
+  return [bits, { work, data }];
+}
 
 function serialize_uint8array(bytes: number, array: Uint8Array): T.Bits {
   let bits = Bits.empty;
@@ -750,11 +697,11 @@ function serialize_uint8array(bytes: number, array: Uint8Array): T.Bits {
 
 function deserialize_uint8array(
   bytes: number,
-  bits: T.Bits
+  bits: T.Bits,
 ): [T.Bits, Uint8Array] {
   const vals = [];
   for (let i = 0; i < bytes; ++i) {
-    let val;
+    let val: bigint;
     [bits, val] = deserialize_fixed_len(8, bits);
     vals.push(Number(val));
   }
@@ -784,7 +731,7 @@ function deserialize_block(bits: T.Bits): [T.Bits, Block] {
   [bits, time] = deserialize_fixed_len(256, bits);
   [bits, body] = deserialize_uint8array(BODY_SIZE, bits);
   time = U256.mask(time);
-  return [bits, { prev, time, body }];
+  return [bits, { prev, time, body: body as Body }];
 }
 
 function serialize_message(message: Message): T.Bits {
@@ -793,7 +740,7 @@ function serialize_message(message: Message): T.Bits {
       const code0 = Bits.from("0000");
       const peers = serialize_list(
         serialize_address,
-        array_to_list(message.peers)
+        array_to_list(message.peers),
       );
       return Bits.concat(code0, peers);
     }
@@ -807,39 +754,42 @@ function serialize_message(message: Message): T.Bits {
       const b_hash = serialize_hash(message.b_hash);
       return Bits.concat(code2, b_hash);
     }
-    // case "PutSlice": {
-    //   const code3 = Bits.from("1100");
-    //   const slice = serialize_slice(message.slice);
-    //   return Bits.concat(code3, slice);
-    // }
+    case "PutSlices": {
+      const code3 = Bits.from("1100");
+      const slices = serialize_list(serialize_slice, array_to_list(message.slices));
+      return Bits.concat(code3, slices);
+    }
   }
 }
 
 function deserialize_message(bits: T.Bits): [T.Bits, Message] {
-  const rest = Bits.slice(4)(bits);
-  switch (bits.slice(0, 4)) {
+  const CODE_SIZE = 4;
+  const code = Bits.slice(0, CODE_SIZE)(bits);
+  bits = Bits.slice(CODE_SIZE)(bits);
+  switch (code) {
     case "0000": {
       let peers;
-      [bits, peers] = deserialize_list(deserialize_address, rest);
+      [bits, peers] = deserialize_list(deserialize_address, bits);
       return [bits, { ctor: "PutPeers", peers: list_to_array(peers) }];
     }
     case "1000": {
       let block;
-      [bits, block] = deserialize_block(rest);
+      [bits, block] = deserialize_block(bits);
       return [bits, { ctor: "PutBlock", block }];
     }
     case "0100": {
       let b_hash;
-      [bits, b_hash] = deserialize_hash(rest);
+      [bits, b_hash] = deserialize_hash(bits);
       return [bits, { ctor: "AskBlock", b_hash }];
     }
-    // case "11": {
-    //   let slice;
-    //     [bits, slice] = deserialize_slice(rest);
-    //     return [bits, { ctor: "PutSlice", slice }];
-    // }
+    case "1100": {
+      let slices_: List<Slice>;
+      [bits, slices_] = deserialize_list(deserialize_slice, bits);
+      const slices = list_to_array(slices_);
+      return [bits, { ctor: "PutSlices", slices }];
+    }
   }
-  throw "bad message deserialization";
+  throw "bad message deserialization"; // TODO: handle error on bad serialization of messages
 }
 
 // Networking
@@ -848,8 +798,7 @@ function deserialize_message(bits: T.Bits): [T.Bits, Message] {
 const DEFAULT_PORT: number = 16936;
 
 const valid_port = (port: number) => !isNaN(port) && port >= 1 && port <= 65535;
-const valid_octet = (octet: number) =>
-  !isNaN(octet) && octet >= 0 && octet <= 255;
+const valid_octet = (octet: number) => !isNaN(octet) && octet >= 0 && octet <= 255;
 
 function address_to_deno(address: Address): Deno.Addr {
   return {
@@ -929,13 +878,13 @@ function udp_send(udp: Deno.DatagramConn, address: Address, message: Message) {
   //console.log("send", address, message);
   udp.send(
     bits_to_uint8array(serialize_message(message)),
-    address_to_deno(address)
+    address_to_deno(address),
   );
 }
 
 function udp_receive<T>(
   udp: Deno.DatagramConn,
-  callback: (address: Address, message: Message) => T
+  callback: (address: Address, message: Message) => T,
 ) {
   setTimeout(async () => {
     for await (const [buff, deno_addr] of udp) {
@@ -953,16 +902,17 @@ function udp_receive<T>(
 
 export function start_node(
   base_dir: string,
-  { port = DEFAULT_PORT, display = false, secret_key = U256.zero }
+  { port = DEFAULT_PORT, display = false, secret_key = U256.zero },
 ) {
   const get_dir = get_dir_with_base(base_dir);
 
   // TODO: i don't understand this  :P
   const MINER_CPS = 16;
-  const MINER_HASHRATE = 1024;
+  const MINER_HASHRATE = 64;
 
   let MINED = 0;
 
+  //! TODO: add peers
   const peers: Dict<Peer> = {};
 
   // Initializes the node
@@ -972,7 +922,8 @@ export function start_node(
   const node: Node = { port, peers, chain };
 
   let body: Body = EmptyBody;
-  // body[0] = (port % 42000); // DEBUG
+  body[0] = (port >> 8) % 0xFF; // DEBUG
+  body[1] = (port) % 0xFF; // DEBUG
 
   // Initializes sockets
   const udp = udp_init(port);
@@ -1024,10 +975,10 @@ export function start_node(
           break;
         }
       }
-      //case "PutSlice":
-      //var work = get_hash_work(hash_slice(message.slice));
-      //node.slices = heap_insert([work, message.slice], node.slices);
-      //break;
+        //case "PutSlice":
+        //var work = get_hash_work(hash_slice(message.slice));
+        //node.slices = heap_insert([work, message.slice], node.slices);
+        //break;
     }
   }
   udp_receive(udp, handle_message);
@@ -1043,7 +994,7 @@ export function start_node(
       tip_target,
       max_hashes,
       get_time(),
-      secret_key
+      secret_key,
     );
     //console.log("[miner] Difficulty: " + compute_difficulty(tip_target) + " hashes/block. Power: " + max_hashes + " hashes.");
     if (mined !== null) {
@@ -1096,9 +1047,7 @@ export function start_node(
   // Loads saved blocks
   function loader() {
     const b_dir = get_dir(DIR_BLOCKS);
-    const files = Array.from(Deno.readDirSync(b_dir)).sort((x, y) =>
-      x.name > y.name ? 1 : -1
-    );
+    const files = Array.from(Deno.readDirSync(b_dir)).sort((x, y) => x.name > y.name ? 1 : -1);
     for (const file of files) {
       const buff = Deno.readFileSync(b_dir + "/" + file.name);
       const [_bits, block] = deserialize_block(uint8array_to_bits(buff));
@@ -1127,22 +1076,22 @@ export function start_node(
     console.log("");
     console.log("- current_time  : " + get_time() + " UTC");
     console.log(
-      "- online_peers  : " + Object.keys(node.peers).length + " peers"
+      "- online_peers  : " + Object.keys(node.peers).length + " peers",
     );
     console.log(
-      "- chain_height  : " + get_longest_chain(node.chain).length + " blocks"
+      "- chain_height  : " + get_longest_chain(node.chain).length + " blocks",
     );
     console.log(
       "- database      : " +
         (Object.keys(node.chain.block).length - 1) +
-        " blocks"
+        " blocks",
     );
     console.log(
       "- pending       : " +
         pending_size +
         " blocks (" +
         pending_seen +
-        " downloaded)"
+        " downloaded)",
     );
     console.log("- total_mined   : " + MINED + " blocks");
     console.log("- own_hash_rate : " + MINER_HASHRATE + " hashes / second");
@@ -1152,7 +1101,15 @@ export function start_node(
     console.log("Blocks");
     console.log("------");
     console.log("");
-    console.log(show_chain(node.chain, 32));
+    console.log(show_chain(node.chain, 16));
+  }
+
+  function display_tip() {
+    const tip = chain.tip;
+    const tip_hash = tip[1];
+    // const tip_block = get_assert(chain.block, tip_hash);
+    const tip_height = get_assert(chain.height, tip_hash);
+    console.log(tip_height, "->", tip_hash);
   }
 
   loader();
@@ -1207,8 +1164,7 @@ export function main(args: string[], get_env: GetEnv): void {
   });
 
   // TODO: fix ENV("HOME") ?? ""
-  const base_dir =
-    get_env("UBILOG_DIR") ?? path.join(get_env("HOME") ?? "", ".ubilog");
+  const base_dir = get_env("UBILOG_DIR") ?? path.join(get_env("HOME") ?? "", ".ubilog");
   const config_file_data = load_config_file(base_dir);
   if (!is_json_object(config_file_data)) {
     throw new Error(`invalid config file, content is not a JSON object`);
