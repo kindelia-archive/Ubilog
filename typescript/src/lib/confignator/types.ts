@@ -15,6 +15,8 @@ export type Segments = Octuple<number>;
 export type IPv4 = { _: "IPv4"; octets: Octets };
 export type IPv6 = { _: "IPv6"; segments: Segments };
 export type Address = IPv4 | IPv6;
+export type AddressPort = Address & { port: number };
+export type AddressOptPort = Address & { port?: number };
 
 export interface Validator<T> {
   from_string(v: string): SResult<T>;

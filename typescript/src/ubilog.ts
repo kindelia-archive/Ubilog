@@ -893,7 +893,7 @@ function udp_receive<T>(
 
 export function start_node(
   base_dir: string,
-  { port = DEFAULT_PORT, display = false, secret_key = u256.zero },
+  { port = DEFAULT_PORT, display = false, secret_key = u256.zero, peers },
 ) {
   const get_dir = get_dir_with_base(base_dir);
 
@@ -904,13 +904,13 @@ export function start_node(
   let MINED = 0;
 
   //! TODO: add peers
-  const peers: Dict<Peer> = {};
+  const initial_peers: Dict<Peer> = {};
 
   // Initializes the node
 
   const chain: Chain = initial_chain();
   // var slices : Heap<Slice> = {ctor: "Empty"};
-  const node: Node = { port, peers, chain };
+  const node: Node = { port, peers: initial_peers, chain };
 
   const body: Body = EmptyBody;
   body[0] = (port >> 8) % 0xFF; // DEBUG

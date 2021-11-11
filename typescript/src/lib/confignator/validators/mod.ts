@@ -3,7 +3,7 @@ import { JSONValue } from "../../json.ts";
 
 import { SResult, Validator } from "../types.ts";
 import { BaseValidator, ListValidator } from "./base.ts";
-import { address_validator } from "./address.ts";
+import { address_opt_port_validator } from "./address.ts";
 
 const check_range = <T extends number | bigint>(min?: T, max?: T) =>
   (x: T): SResult<T> => {
@@ -18,7 +18,7 @@ const check_range = <T extends number | bigint>(min?: T, max?: T) =>
 
 export namespace Validators {
   export const list = <T>(item_validator: Validator<T>) => new ListValidator(item_validator);
-  export const address = address_validator;
+  export const address_opt_port = address_opt_port_validator;
 
   export const yes_no = new BaseValidator<boolean>(
     (x: string): SResult<boolean> => {

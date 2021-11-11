@@ -1,7 +1,7 @@
 import { break_list, drop_while } from "../../functional/mod.ts";
 import * as R from "../../functional/result.ts";
 
-import { Address, Octuple, Quadruple, SResult, Validator } from "../types.ts";
+import { Address, AddressOptPort, Octuple, Quadruple, SResult, Validator } from "../types.ts";
 import { BaseValidator } from "./base.ts";
 
 const valid_port = (port: number) => !isNaN(port) && port >= 1 && port <= 0xffff;
@@ -19,10 +19,10 @@ function check_len_8<T>(arr: T[]): arr is Octuple<T> {
 // TODO: add Address only Validator
 // TODO: separate optional port Validator
 
-export const address_validator: Validator<[Address, number?]> = new BaseValidator<
-  [Address, number?]
+export const address_opt_port_validator: Validator<AddressOptPort> = new BaseValidator<
+  AddressOptPort
 >(
-  (address_txt: string): SResult<[Address, number?]> => {
+  (address_txt: string): SResult<AddressOptPort> => {
     address_txt = address_txt.trim();
 
     const ip_port_re = /((?:\d{1,3}(?:\.\d{1,3}){3,3})|(?:\[[0-9a-fA-F\:]+\]))(?:\:(\d+))?/;
@@ -63,9 +63,8 @@ export const address_validator: Validator<[Address, number?]> = new BaseValidato
       if (segments.some((x) => !valid_segment(x))) {
         return R.Err(`invalid address: ${ip_txt}`);
       }
-      const ipv6: Address = { _: "IPv6", segments };
-      const ipv6_port: [Address, number?] = [ipv6, port];
-      return R.Ok(ipv6_port);
+      const addr: AddressOptPort = { _: "IPv6", segments, port };
+      return R.Ok<string, AddressOptPort>(addr);
     } else {
       const octets = ip_txt.split(".").map(Number);
       if (!check_len_4(octets)) {
@@ -74,9 +73,8 @@ export const address_validator: Validator<[Address, number?]> = new BaseValidato
       if (octets.some((x) => !valid_octet(x))) {
         return R.Err(`invalid address: ${ip_txt}`);
       }
-      const ipv4: Address = { _: "IPv4", octets };
-      const ipv4_port: [Address, number?] = [ipv4, port];
-      return R.Ok(ipv4_port);
+      const addr: AddressOptPort = { _: "IPv4", octets };
+      return R.Ok<string, AddressOptPort>(addr);
     }
   },
 );

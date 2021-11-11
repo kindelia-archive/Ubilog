@@ -2,7 +2,7 @@ import { bits_mask } from "./lib/numbers.ts";
 import { JSONValue } from "./lib/json.ts";
 import { ensure_text_file } from "./lib/files.ts";
 import { config_resolver, ConfigSchema, Validators as V } from "./lib/confignator/mod.ts";
-import { Address } from "./lib/confignator/mod.ts";
+import { AddressOptPort } from "./lib/confignator/mod.ts";
 
 export type { GetEnv } from "./lib/confignator/mod.ts";
 
@@ -10,7 +10,7 @@ type ConfigTypes = {
   net_port: number;
   display: boolean;
   secret_key: bigint;
-  peers: [Address, number?][];
+  peers: AddressOptPort[];
 };
 
 const config_schema: ConfigSchema<ConfigTypes> = {
@@ -33,7 +33,7 @@ const config_schema: ConfigSchema<ConfigTypes> = {
     default: false,
   },
   peers: {
-    validator: V.list(V.address),
+    validator: V.list(V.address_opt_port),
     env: "PEERS",
     flag: "peers",
     default: [],
