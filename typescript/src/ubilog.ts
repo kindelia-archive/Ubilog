@@ -7,7 +7,7 @@ import { is_json_object } from "./lib/json.ts";
 import { get_dir_with_base } from "./lib/files.ts";
 import { bits_mask } from "./lib/numbers.ts";
 
-import type { AddressPort, Bits, Octuple, Quadruple, Tag } from "./types/mod.ts";
+import { AddressPort, Bits, Octuple, Quadruple, Tag } from "./types/mod.ts";
 import * as T from "./types/mod.ts";
 import type { U16, U256, U64, U8 } from "./types/numbers/mod.ts";
 import { u16, u256, u64, u8 } from "./types/numbers/mod.ts";
@@ -409,13 +409,16 @@ function add_block(chain: Chain, block: Block, time: T.U64) {
   while (must_add.length > 0) {
     const block = must_add.pop() ?? BlockZero;
     const b_time = block.time >> 192n;
+    const b_hash = hash_block(block);
     if (b_time < BigInt(time) + DELAY_TOLERANCE) {
-      const b_hash = hash_block(block);
+      // Block has valid time
       if (chain.block.get(b_hash) === undefined) {
+        // Block is not present in the database
         const p_hash = block.prev;
         // If previous block is available, add the block
         // TODO: extract function to add mined blocks?
         if (chain.block.get(p_hash) !== undefined) {
+          console.log("  ++ adding block".padEnd(30, " "), b_hash); // DEBUG
           const work = get_hash_work(b_hash);
           // const ptime = chain.block
           chain.block.set(b_hash, block);
@@ -474,11 +477,14 @@ function add_block(chain: Chain, block: Block, time: T.U64) {
           chain.pending.delete(b_hash);
           // Otherwise, add this block to the previous block's pending list
         } else if (chain.seen.get(b_hash) === undefined) {
+          console.log(" ^^ pending block".padEnd(30, " "), b_hash); // DEBUG
           chain.pending.set(p_hash, chain.pending.get(p_hash) ?? []);
           get_assert(chain.pending, p_hash).push(block);
         }
         chain.seen.set(b_hash, true);
       }
+    } else {
+      console.log("  D: block time invalid".padEnd(30, " "), b_hash); // DEBUG
     }
   }
 }
@@ -811,7 +817,7 @@ function deno_to_address(deno_addr: Deno.Addr): AddressPort {
 // TODO: use parser from lib
 function string_to_address(address_txt: string): AddressPort {
   const addr_split = address_txt.split(":");
-  const port_txt = address_txt[-1];
+  const port_txt = addr_split[addr_split.length - 1];
   const ip_txt = addr_split.slice(0, -1).join(":");
 
   const port_ = default_or_convert(Number, valid_port)(DEFAULT_PORT)(port_txt);
@@ -915,9 +921,8 @@ export function start_node(
     const port = u16.mask(cfg_peer.port ?? DEFAULT_PORT);
     const address = { ...cfg_peer, port };
     const peer = { seen_at: now(), address };
-    initial_peers[JSON.stringify(address)] = peer;
+    initial_peers[serialize_address(address)] = peer;
   }
-
   // Initializes the node
 
   const chain: Chain = initial_chain();
@@ -944,30 +949,33 @@ export function start_node(
   }
 
   function all_peers(): Array<Peer> {
-    return Object.values(node.peers);
+    return Object.values(node.peers).filter((p) => p.address.port !== cfg.port); //! DEBUG
   }
 
   // Handles incoming messages
   function handle_message(sender: AddressPort, message: Message) {
     switch (message.ctor) {
-      case "PutPeers":
-        //console.log("PutPeers", message.peers.length);
+      case "PutPeers": {
+        console.log("<- received PutPeers".padEnd(30, " "), message.peers.length); // DEBUG
         for (const address of message.peers) {
           node.peers[serialize_address(address)] = {
             seen_at: get_time(),
             address,
           };
         }
-        break;
-      case "PutBlock":
-        //console.log("PutBlock", hash_block(message.block));
+        return;
+      }
+      case "PutBlock": {
+        console.log("<- received PutBlock".padEnd(30, " "), hash_block(message.block)); // DEBUG
         add_block(node.chain, message.block, get_time());
-        break;
+        return;
+      }
       case "AskBlock": {
+        console.log("<- received AskBlock".padEnd(30, " "), message.b_hash); // DEBUG
         const block = node.chain.block.get(message.b_hash);
         if (block) {
+          console.log(`  -> sending asked block:`.padEnd(30, " "), `${message.b_hash}`); // DEBUG
           send(sender, { ctor: "PutBlock", block });
-          //console.log("send asked block");
           // Gets some children to send too
           //for (var i = 0; i < 8; ++i) {
           //var block = node.chain.block[block.prev];
@@ -975,16 +983,20 @@ export function start_node(
           //send(sender, {ctor: "PutBlock", block});
           //}
           //}
-          break;
+        } else {
+          console.log(`  XX block not found:`.padEnd(30, " "), `${message.b_hash}`); // DEBUG
         }
+        return;
       }
-        //case "PutSlice":
-        //var work = get_hash_work(hash_slice(message.slice));
-        //node.slices = heap_insert([work, message.slice], node.slices);
-        //break;
+      case "PutSlices": {
+        console.log("<- received PutSlices".padEnd(30, " ")); // DEBUG
+        // const work = get_hash_work(hash_slice(message.slice));
+        // node.slices = heap_insert([work, message.slice], node.slices);
+        return;
+      }
     }
+    throw `bad message`;
   }
-  udp_receive(udp, handle_message);
 
   // Attempts to mine a new block
   function miner() {
@@ -1010,7 +1022,6 @@ export function start_node(
       const rand_txt = pad_left((64 / 8) * 2, "0", rand.toString(16));
       // TODO: one file per secret_key? store secret key hash with each rand (much redundancy)?
       Deno.writeTextFileSync(dir + "/" + b_hash, rand_txt);
-      //displayer();
     }
   }
 
@@ -1018,8 +1029,8 @@ export function start_node(
   function gossiper() {
     const tip_hash = node.chain.tip[1];
     const block = get_assert(node.chain.block, tip_hash);
+    console.log("=> sending TIP".padEnd(30, " "), hash_block(block)); // DEBUG
     for (const peer of all_peers()) {
-      //console.log("send PutBlock", hash_block(block));
       send(peer.address, { ctor: "PutBlock", block });
     }
   }
@@ -1028,6 +1039,7 @@ export function start_node(
   function requester() {
     for (const b_hash of node.chain.pending.keys()) {
       if (!node.chain.seen.get(b_hash)) {
+        console.log("=> requesting PENDING".padEnd(30, " "), b_hash); // DEBUG
         for (const peer of all_peers()) {
           send(peer.address, { ctor: "AskBlock", b_hash });
         }
@@ -1086,7 +1098,7 @@ export function start_node(
     );
     console.log(
       "- database      : " +
-        (Object.keys(node.chain.block).length - 1) +
+        (node.chain.block.size - 1) +
         " blocks",
     );
     console.log(
@@ -1100,6 +1112,7 @@ export function start_node(
     console.log("- own_hash_rate : " + MINER_HASHRATE + " hashes / second");
     console.log("- net_hash_rate : " + rate + " hashes / second");
     console.log("- difficulty    : " + diff + " hashes / block");
+    console.log("- peers: ", all_peers().map((p) => JSON.stringify(p.address)).join(", "));
     console.log("");
     console.log("Blocks");
     console.log("------");
@@ -1117,12 +1130,17 @@ export function start_node(
 
   loader();
 
-  setInterval(miner, 1000 / MINER_CPS);
+  const receiver = () => udp_receive(udp, handle_message);
+
   setInterval(gossiper, 1000);
-  setInterval(requester, 1000 / 32);
+  setInterval(requester, 1000 / 16);
+  setInterval(receiver, 1000 / 32);
   setInterval(saver, 1000 * 30);
+  setInterval(miner, 1000 / MINER_CPS);
   if (cfg.display) {
-    setInterval(displayer, 1000);
+    setTimeout(() =>
+      setInterval(displayer, 1000) //
+    , 900);
   }
 }
 

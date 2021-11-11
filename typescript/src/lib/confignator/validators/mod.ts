@@ -64,7 +64,7 @@ export const bigint = new BaseValidator<bigint>(
     try {
       const num = BigInt(x);
       return R.Ok(num);
-    } catch (err) {
+    } catch {
       return r_err;
     }
   },
