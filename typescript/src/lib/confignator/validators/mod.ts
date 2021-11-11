@@ -18,6 +18,9 @@ const check_range = <T extends number | bigint>(min?: T, max?: T) =>
 
 // TODO: validators for typed fixed size numbers
 
+// Base Validators
+// ---------------
+
 export const address_opt_port = address_opt_port_validator;
 
 export const yes_no = new BaseValidator<boolean>(

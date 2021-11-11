@@ -5,6 +5,7 @@ import type { AddressOptPort, ConfigSchema } from "./lib/confignator/mod.ts";
 import { config_resolver, V } from "./lib/confignator/mod.ts";
 
 export type { GetEnv } from "./lib/confignator/mod.ts";
+export * as cfg_nt from './lib/confignator/mod.ts' 
 
 type ConfigTypes = {
   net_port: number;

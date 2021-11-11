@@ -7,11 +7,12 @@ import { is_json_object } from "./lib/json.ts";
 import { get_dir_with_base } from "./lib/files.ts";
 import { bits_mask } from "./lib/numbers.ts";
 
-import { AddressPort, Bits, Octuple, Quadruple, Tag } from "./types/mod.ts";
-import { U16, u16, U256, u256, U64, u64, U8, u8 } from "./types/number.ts";
+import type { AddressPort, Bits, Octuple, Quadruple, Tag } from "./types/mod.ts";
 import * as T from "./types/mod.ts";
+import type { U16, U256, U64, U8 } from "./types/numbers/mod.ts";
+import { u16, u256, u64, u8 } from "./types/numbers/mod.ts";
 import { keccak256 } from "./keccak256.ts";
-import { GetEnv, load_config_file, resolve_config } from "./config.ts";
+import { GetEnv, load_config_file, resolve_config, cfg_nt } from "./config.ts";
 
 // Configuration:
 // ~/.ubilog/config
@@ -893,19 +894,14 @@ function udp_receive<T>(
 
 export function start_node(
   base_dir: string,
-  config: {
-    port?: number;
-    display?: boolean;
-    secret_key?: U256;
-    // peers?: cfg_nt.AddressOptPort[]
-  },
+  config: { port?: number; display?: boolean; secret_key?: U256; peers?: cfg_nt.AddressOptPort[] },
 ) {
   const get_dir = get_dir_with_base(base_dir);
   const cfg = Object.assign({}, {
     port: DEFAULT_PORT,
     display: false,
     secret_key: u256.zero,
-    // peers: [] as cfg_nt.AddressOptPort[],
+    peers: [] as cfg_nt.AddressOptPort[],
   }, config);
 
   // TODO: i don't understand this  :P
@@ -914,14 +910,13 @@ export function start_node(
 
   let MINED = 0;
 
-  //! TODO: add peers
   const initial_peers: Dict<Peer> = {};
-  // for (const cfg_peer of cfg.peers) {
-  //   const port = u16.mask(cfg_peer.port ?? DEFAULT_PORT);
-  //   const address = { ...cfg_peer, port };
-  //   const peer = { seen_at: now(), address };
-  //   initial_peers[JSON.stringify(address)] = peer;
-  // }
+  for (const cfg_peer of cfg.peers) {
+    const port = u16.mask(cfg_peer.port ?? DEFAULT_PORT);
+    const address = { ...cfg_peer, port };
+    const peer = { seen_at: now(), address };
+    initial_peers[JSON.stringify(address)] = peer;
+  }
 
   // Initializes the node
 
@@ -1183,7 +1178,7 @@ export function main(args: string[], get_env: GetEnv): void {
   start_node(base_dir, {
     port: config.net_port,
     display: config.display,
-    // peers: config.peers,
+    peers: config.peers,
   });
 }
 

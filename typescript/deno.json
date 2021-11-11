@@ -4,7 +4,7 @@
       "exclude": ["src/keccak256.ts"]
     },
     "rules": {
-      "exclude": ["camelcase", "no-namespace"]
+      "exclude": ["camelcase"]
     }
   },
   "fmt": {

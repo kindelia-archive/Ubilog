@@ -1,5 +1,5 @@
 import { Octuple, Quadruple } from "./tuple.ts";
-import { U16 } from "./number.ts";
+import { U16 } from "./numbers/mod.ts";
 
 export type Octets = Quadruple<number>;
 export type Segments = Octuple<number>;
