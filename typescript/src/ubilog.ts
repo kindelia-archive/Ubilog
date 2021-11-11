@@ -893,7 +893,7 @@ function udp_receive<T>(
 
 export function start_node(
   base_dir: string,
-  { port = DEFAULT_PORT, display = false, secret_key = u256.zero, peers },
+  { port = DEFAULT_PORT, display = false, secret_key = u256.zero },
 ) {
   const get_dir = get_dir_with_base(base_dir);
 

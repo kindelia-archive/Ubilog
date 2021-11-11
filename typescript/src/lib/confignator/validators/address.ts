@@ -73,7 +73,7 @@ export const address_opt_port_validator: Validator<AddressOptPort> = new BaseVal
       if (octets.some((x) => !valid_octet(x))) {
         return R.Err(`invalid address: ${ip_txt}`);
       }
-      const addr: AddressOptPort = { _: "IPv4", octets };
+      const addr: AddressOptPort = { _: "IPv4", octets, port };
       return R.Ok<string, AddressOptPort>(addr);
     }
   },
