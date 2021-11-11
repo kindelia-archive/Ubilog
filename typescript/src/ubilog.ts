@@ -893,9 +893,20 @@ function udp_receive<T>(
 
 export function start_node(
   base_dir: string,
-  { port = DEFAULT_PORT, display = false, secret_key = u256.zero },
+  config: {
+    port?: number;
+    display?: boolean;
+    secret_key?: U256;
+    // peers?: cfg_nt.AddressOptPort[]
+  },
 ) {
   const get_dir = get_dir_with_base(base_dir);
+  const cfg = Object.assign({}, {
+    port: DEFAULT_PORT,
+    display: false,
+    secret_key: u256.zero,
+    // peers: [] as cfg_nt.AddressOptPort[],
+  }, config);
 
   // TODO: i don't understand this  :P
   const MINER_CPS = 16;
@@ -905,19 +916,25 @@ export function start_node(
 
   //! TODO: add peers
   const initial_peers: Dict<Peer> = {};
+  // for (const cfg_peer of cfg.peers) {
+  //   const port = u16.mask(cfg_peer.port ?? DEFAULT_PORT);
+  //   const address = { ...cfg_peer, port };
+  //   const peer = { seen_at: now(), address };
+  //   initial_peers[JSON.stringify(address)] = peer;
+  // }
 
   // Initializes the node
 
   const chain: Chain = initial_chain();
   // var slices : Heap<Slice> = {ctor: "Empty"};
-  const node: Node = { port, peers: initial_peers, chain };
+  const node: Node = { port: cfg.port, peers: initial_peers, chain };
 
   const body: Body = EmptyBody;
-  body[0] = (port >> 8) % 0xFF; // DEBUG
-  body[1] = (port) % 0xFF; // DEBUG
+  body[0] = (cfg.port >> 8) % 0xFF; // DEBUG
+  body[1] = (cfg.port) % 0xFF; // DEBUG
 
   // Initializes sockets
-  const udp = udp_init(port);
+  const udp = udp_init(cfg.port);
 
   // Returns the current time
   // TODO: get peers median?
@@ -985,7 +1002,7 @@ export function start_node(
       tip_target,
       max_hashes,
       get_time(),
-      secret_key,
+      cfg.secret_key,
     );
     //console.log("[miner] Difficulty: " + compute_difficulty(tip_target) + " hashes/block. Power: " + max_hashes + " hashes.");
     if (mined !== null) {
@@ -1109,7 +1126,7 @@ export function start_node(
   setInterval(gossiper, 1000);
   setInterval(requester, 1000 / 32);
   setInterval(saver, 1000 * 30);
-  if (display) {
+  if (cfg.display) {
     setInterval(displayer, 1000);
   }
 }
@@ -1163,7 +1180,11 @@ export function main(args: string[], get_env: GetEnv): void {
 
   const config = resolve_config(parsed_flags, config_file_data, get_env);
 
-  start_node(base_dir, { port: config.net_port, display: config.display });
+  start_node(base_dir, {
+    port: config.net_port,
+    display: config.display,
+    // peers: config.peers,
+  });
 }
 
 if (import.meta.main) {

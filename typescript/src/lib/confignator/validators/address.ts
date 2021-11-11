@@ -1,7 +1,7 @@
 import { break_list, drop_while } from "../../functional/mod.ts";
 import * as R from "../../functional/result.ts";
 
-import { Address, AddressOptPort, Octuple, Quadruple, SResult, Validator } from "../types.ts";
+import { AddressOptPort, Octuple, Quadruple, SResult, Validator } from "../types.ts";
 import { BaseValidator } from "./base.ts";
 
 const valid_port = (port: number) => !isNaN(port) && port >= 1 && port <= 0xffff;

@@ -1,8 +1,8 @@
 import { bits_mask } from "./lib/numbers.ts";
 import { JSONValue } from "./lib/json.ts";
 import { ensure_text_file } from "./lib/files.ts";
-import { config_resolver, ConfigSchema, Validators as V } from "./lib/confignator/mod.ts";
-import { AddressOptPort } from "./lib/confignator/mod.ts";
+import type { AddressOptPort, ConfigSchema } from "./lib/confignator/mod.ts";
+import { config_resolver, V } from "./lib/confignator/mod.ts";
 
 export type { GetEnv } from "./lib/confignator/mod.ts";
 
