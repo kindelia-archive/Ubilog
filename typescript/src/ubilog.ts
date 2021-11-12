@@ -12,7 +12,7 @@ import * as T from "./types/mod.ts";
 import type { U16, U256, U64, U8 } from "./types/numbers/mod.ts";
 import { u16, u256, u64, u8 } from "./types/numbers/mod.ts";
 import { keccak256 } from "./keccak256.ts";
-import { GetEnv, load_config_file, resolve_config, cfg_nt } from "./config.ts";
+import { cfg_nt, GetEnv, load_config_file, resolve_config } from "./config.ts";
 
 // Configuration:
 // ~/.ubilog/config
@@ -36,11 +36,10 @@ const DIR_MINED = "data/mined";
 
 type Dict<T> = Record<string, T>;
 
-type F64 = number;
 type Nat = bigint;
 
 type Hash = string & Tag<"Hash">; // 0x0000000000000000000000000000000000000000000000000000000000000000
-type Body = Uint8Array & Tag<"Body">; // 1280 bytes // TODO: add tag
+type Body = Uint8Array & Tag<"Body">; // 1280 bytes
 
 type HashMap<T> = Map<Hash, T>;
 
@@ -134,9 +133,9 @@ function now(): bigint {
 // Numbers
 // -------
 
-const MASK_64 = bits_mask(64n);
-const MASK_192 = bits_mask(192n);
-// const MASK_256 = bits_mask(256n);
+const MASK_64: bigint = bits_mask(64n);
+const MASK_192: bigint = bits_mask(192n);
+// const MASK_256: bigint = bits_mask(256n);
 
 function next_power_of_two(x: number): number {
   return x <= 1 ? x : 2 ** (Math.floor(Math.log(x - 1) / Math.log(2)) + 1);
@@ -442,6 +441,7 @@ function add_block(chain: Chain, block: Block, time: T.U64) {
               get_assert(chain.height, b_hash) > 0n &&
               get_assert(chain.height, b_hash) % BLOCKS_PER_PERIOD === 0n
             ) {
+              // Update difficulty
               let checkpoint_hash = p_hash;
               for (let i = 0n; i < BLOCKS_PER_PERIOD - 1n; ++i) {
                 checkpoint_hash = get_assert(chain.block, checkpoint_hash).prev;
@@ -455,12 +455,14 @@ function add_block(chain: Chain, block: Block, time: T.U64) {
               );
               const next_target = compute_next_target(last_target, scale);
               chain.target.set(b_hash, next_target);
-              //console.log("A period should last   " + TIME_PER_PERIOD + " seconds.");
-              //console.log("The last period lasted " + period_time + " seconds.");
-              //console.log("The last difficulty was " + compute_difficulty(last_target) + " hashes per block.");
-              //console.log("The next difficulty is  " + compute_difficulty(next_target) + " hashes per block.");
-              // Keep old difficulty
+              // console.log();
+              // console.log("[DIFF] A period should last   " + TIME_PER_PERIOD + " seconds.");
+              // console.log("[DIFF] the last period lasted " + period_time + " seconds.");
+              // console.log("[DIFF] the last difficulty was " + compute_difficulty(last_target) + " hashes per block.");
+              // console.log("[DIFF] the next difficulty is  " + compute_difficulty(next_target) + " hashes per block.");
+              // console.log();
             } else {
+              // Keep old difficulty
               chain.target.set(b_hash, get_assert(chain.target, p_hash));
             }
             // Refresh tip
@@ -509,7 +511,7 @@ function get_longest_chain(chain: Chain): Array<Block> {
 function get_address_hostname(address: AddressPort): string {
   switch (address._) {
     case "IPv4":
-      return (address.octets.join("."));
+      return address.octets.join(".");
   }
   throw "FAILURE";
 }
@@ -627,7 +629,9 @@ function serialize_address(address: AddressPort): Bits {
       const val2 = serialize_fixed_len(8, BigInt(address.octets[2]));
       const val3 = serialize_fixed_len(8, BigInt(address.octets[3]));
       const port = serialize_fixed_len(16, BigInt(address.port));
-      return T.bits.push_front(bit0)(T.bits.concat(val0, val1, val2, val3, port));
+      return T.bits.push_front(bit0)(
+        T.bits.concat(val0, val1, val2, val3, port),
+      );
     }
   }
   throw new Error("FAILURE: unknown address type");
@@ -642,11 +646,12 @@ function deserialize_address(bits: Bits): [Bits, AddressPort] {
     [bits, val2] = deserialize_fixed_len(8, bits);
     [bits, val3] = deserialize_fixed_len(8, bits);
     [bits, port] = deserialize_fixed_len(16, bits);
-    const octets = [val0, val1, val2, val3].map(Number).map(u8.mask) as Quadruple<U8>;
+    const octets = [val0, val1, val2, val3]
+      .map(Number)
+      .map(u8.mask) as Quadruple<U8>;
     return [
       bits,
       {
-        // TODO: refactor
         _: "IPv4",
         octets,
         port: u16.mask(Number(port)),
@@ -693,10 +698,7 @@ function serialize_uint8array(bytes: number, array: Uint8Array): Bits {
   return bits;
 }
 
-function deserialize_uint8array(
-  bytes: number,
-  bits: Bits,
-): [Bits, Uint8Array] {
+function deserialize_uint8array(bytes: number, bits: Bits): [Bits, Uint8Array] {
   const vals = [];
   for (let i = 0; i < bytes; ++i) {
     let val: bigint;
@@ -754,7 +756,10 @@ function serialize_message(message: Message): Bits {
     }
     case "PutSlices": {
       const code3 = T.bits.from("1100");
-      const slices = serialize_list(serialize_slice, array_to_list(message.slices));
+      const slices = serialize_list(
+        serialize_slice,
+        array_to_list(message.slices),
+      );
       return T.bits.concat(code3, slices);
     }
   }
@@ -858,7 +863,9 @@ function string_to_address(address_txt: string): AddressPort {
     if ([val0, val1, val2, val3].some((x) => !valid_octet(x))) {
       throw new Error(`invalid address: ${ip_txt}`);
     }
-    const octets = [val0, val1, val2, val3].map(Number).map(u8.mask) as Quadruple<U8>;
+    const octets = [val0, val1, val2, val3]
+      .map(Number)
+      .map(u8.mask) as Quadruple<U8>;
     return {
       _: "IPv4",
       octets,
@@ -872,7 +879,11 @@ function udp_init(port: number = DEFAULT_PORT) {
   return Deno.listenDatagram({ port, transport: "udp" });
 }
 
-function udp_send(udp: Deno.DatagramConn, address: AddressPort, message: Message) {
+function udp_send(
+  udp: Deno.DatagramConn,
+  address: AddressPort,
+  message: Message,
+) {
   //console.log("send", address, message);
   udp.send(
     bits_to_uint8array(serialize_message(message)),
@@ -900,18 +911,30 @@ function udp_receive<T>(
 
 export function start_node(
   base_dir: string,
-  config: { port?: number; display?: boolean; secret_key?: U256; peers?: cfg_nt.AddressOptPort[] },
+  config: {
+    port?: number;
+    display?: boolean;
+    mine: boolean;
+    secret_key?: U256;
+    peers?: cfg_nt.AddressOptPort[];
+  },
 ) {
   const get_dir = get_dir_with_base(base_dir);
-  const cfg = Object.assign({}, {
-    port: DEFAULT_PORT,
-    display: false,
-    secret_key: u256.zero,
-    peers: [] as cfg_nt.AddressOptPort[],
-  }, config);
+  // TODO: fix much redundancy on config params
+  const cfg = Object.assign(
+    {},
+    {
+      port: DEFAULT_PORT,
+      display: false,
+      mine: false,
+      secret_key: u256.zero,
+      peers: [] as cfg_nt.AddressOptPort[],
+    },
+    config,
+  );
 
   // TODO: i don't understand this  :P
-  const MINER_CPS = 16;
+  // const MINER_CPS = 16;
   const MINER_HASHRATE = 64;
 
   let MINED = 0;
@@ -930,8 +953,8 @@ export function start_node(
   const node: Node = { port: cfg.port, peers: initial_peers, chain };
 
   const body: Body = EmptyBody;
-  body[0] = (cfg.port >> 8) % 0xFF; // DEBUG
-  body[1] = (cfg.port) % 0xFF; // DEBUG
+  body[0] = (cfg.port >> 8) % 0xff; // DEBUG
+  body[1] = cfg.port % 0xff; // DEBUG
 
   // Initializes sockets
   const udp = udp_init(cfg.port);
@@ -956,7 +979,10 @@ export function start_node(
   function handle_message(sender: AddressPort, message: Message) {
     switch (message.ctor) {
       case "PutPeers": {
-        console.log("<- received PutPeers".padEnd(30, " "), message.peers.length); // DEBUG
+        console.log(
+          "<- received PutPeers".padEnd(30, " "),
+          message.peers.length,
+        ); // DEBUG
         for (const address of message.peers) {
           node.peers[serialize_address(address)] = {
             seen_at: get_time(),
@@ -966,15 +992,21 @@ export function start_node(
         return;
       }
       case "PutBlock": {
-        console.log("<- received PutBlock".padEnd(30, " "), hash_block(message.block)); // DEBUG
+        // console.log(
+        //   "<- received PutBlock".padEnd(30, " "),
+        //   hash_block(message.block),
+        // ); // DEBUG
         add_block(node.chain, message.block, get_time());
         return;
       }
       case "AskBlock": {
-        console.log("<- received AskBlock".padEnd(30, " "), message.b_hash); // DEBUG
+        // console.log("<- received AskBlock".padEnd(30, " "), message.b_hash); // DEBUG
         const block = node.chain.block.get(message.b_hash);
         if (block) {
-          console.log(`  -> sending asked block:`.padEnd(30, " "), `${message.b_hash}`); // DEBUG
+          // console.log(
+          //    `  -> sending asked block:`.padEnd(30, " "),
+          //   `${message.b_hash}`,
+          // ); // DEBUG
           send(sender, { ctor: "PutBlock", block });
           // Gets some children to send too
           //for (var i = 0; i < 8; ++i) {
@@ -984,7 +1016,10 @@ export function start_node(
           //}
           //}
         } else {
-          console.log(`  XX block not found:`.padEnd(30, " "), `${message.b_hash}`); // DEBUG
+          // console.log(
+          //   `  XX block not found:`.padEnd(30, " "),
+          //   `${message.b_hash}`,
+          // ); // DEBUG
         }
         return;
       }
@@ -998,12 +1033,21 @@ export function start_node(
     throw `bad message`;
   }
 
+  function write_block(block: Block, rand: U64) {
+    const b_hash = hash_block(block);
+    const dir = get_dir(DIR_MINED);
+    const rand_txt = pad_left((64 / 8) * 2, "0", rand.toString(16));
+    // TODO: one JSONL file per secret_key
+    Deno.writeTextFileSync(dir + "/" + b_hash, rand_txt);
+  }
+
   // Attempts to mine a new block
   function miner() {
     const tip_hash = node.chain.tip[1];
     const tip_target = node.chain.target.get(tip_hash);
     assert_non_null(tip_target);
-    const max_hashes = MINER_HASHRATE / MINER_CPS;
+    // const max_hashes = MINER_HASHRATE / MINER_CPS;
+    const max_hashes = 16;
     const mined = mine(
       { ...BlockZero, body, prev: tip_hash },
       tip_target,
@@ -1012,17 +1056,16 @@ export function start_node(
       cfg.secret_key,
     );
     //console.log("[miner] Difficulty: " + compute_difficulty(tip_target) + " hashes/block. Power: " + max_hashes + " hashes.");
-    if (mined !== null) {
+    if (mined != null) {
+      console.log("=> block MINED".padEnd(30, " "));
       const [new_block, rand] = mined;
       MINED += 1;
       add_block(node.chain, new_block, get_time());
-
-      const b_hash = hash_block(new_block);
-      const dir = get_dir(DIR_MINED);
-      const rand_txt = pad_left((64 / 8) * 2, "0", rand.toString(16));
-      // TODO: one file per secret_key? store secret key hash with each rand (much redundancy)?
-      Deno.writeTextFileSync(dir + "/" + b_hash, rand_txt);
+      write_block(new_block, rand);
     }
+    // Let other jobs run and loop
+    // await null;
+    setTimeout(miner, 0);
   }
 
   // Sends our tip block to random peers
@@ -1096,11 +1139,7 @@ export function start_node(
     console.log(
       "- chain_height  : " + get_longest_chain(node.chain).length + " blocks",
     );
-    console.log(
-      "- database      : " +
-        (node.chain.block.size - 1) +
-        " blocks",
-    );
+    console.log("- database      : " + (node.chain.block.size - 1) + " blocks");
     console.log(
       "- pending       : " +
         pending_size +
@@ -1112,7 +1151,12 @@ export function start_node(
     console.log("- own_hash_rate : " + MINER_HASHRATE + " hashes / second");
     console.log("- net_hash_rate : " + rate + " hashes / second");
     console.log("- difficulty    : " + diff + " hashes / block");
-    console.log("- peers: ", all_peers().map((p) => JSON.stringify(p.address)).join(", "));
+    console.log(
+      "- peers: ",
+      all_peers()
+        .map((p) => JSON.stringify(p.address))
+        .join(", "),
+    );
     console.log("");
     console.log("Blocks");
     console.log("------");
@@ -1133,14 +1177,19 @@ export function start_node(
   const receiver = () => udp_receive(udp, handle_message);
 
   setInterval(gossiper, 1000);
-  setInterval(requester, 1000 / 16);
-  setInterval(receiver, 1000 / 32);
+  setInterval(requester, 1000 / 32);
+  setInterval(receiver, 1000 / 64);
   setInterval(saver, 1000 * 30);
-  setInterval(miner, 1000 / MINER_CPS);
+
+  if (cfg.mine) {
+    // setInterval(miner, 1000 / MINER_CPS);
+    miner();
+  }
   if (cfg.display) {
-    setTimeout(() =>
-      setInterval(displayer, 1000) //
-    , 900);
+    setTimeout(
+      () => setInterval(displayer, 1000), //
+      900,
+    );
   }
 }
 
@@ -1193,9 +1242,13 @@ export function main(args: string[], get_env: GetEnv): void {
 
   const config = resolve_config(parsed_flags, config_file_data, get_env);
 
+  // TODO: redundancy. pass entire config object
+  // (needs fixed size numbers on config)
   start_node(base_dir, {
     port: config.net_port,
     display: config.display,
+    mine: config.mine,
+    // secret_key: config.secret_key,
     peers: config.peers,
   });
 }

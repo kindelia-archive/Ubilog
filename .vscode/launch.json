@@ -1,0 +1,44 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "request": "launch",
+      "name": "ubilog",
+      "args": ["--display", "--port", "42001"],
+      "type": "pwa-node",
+      "program": "${workspaceFolder}/typescript/src/ubilog.ts",
+      "cwd": "${workspaceFolder}/typescript",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "run",
+        "--config",
+        "deno.json",
+        "--unstable",
+        "--allow-all",
+        "--inspect"
+      ],
+      "attachSimplePort": 9229
+    },
+    {
+      "request": "launch",
+      "name": "ubilog MINER",
+      "args": ["--display", "--port", "42001", "--mine"],
+      "type": "pwa-node",
+      "program": "${workspaceFolder}/typescript/src/ubilog.ts",
+      "cwd": "${workspaceFolder}/typescript",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "run",
+        "--config",
+        "deno.json",
+        "--unstable",
+        "--allow-all",
+        "--inspect"
+      ],
+      "attachSimplePort": 9229
+    }
+  ]
+}

@@ -7,7 +7,7 @@
 
 - Deno executable?
 
-- mined rands on JSONL file(s)
+- mined rands on one JSONL per secret key
 
 - test JSON file config
 - test custom base dir
@@ -15,7 +15,7 @@
 
 - native mining module in Rust
   - FFI
-  - bindgen?
+  - bind gen?
 
 ---
 

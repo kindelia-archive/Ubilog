@@ -5,11 +5,12 @@ import type { AddressOptPort, ConfigSchema } from "./lib/confignator/mod.ts";
 import { config_resolver, V } from "./lib/confignator/mod.ts";
 
 export type { GetEnv } from "./lib/confignator/mod.ts";
-export * as cfg_nt from './lib/confignator/mod.ts' 
+export * as cfg_nt from "./lib/confignator/mod.ts";
 
 type ConfigTypes = {
   net_port: number;
   display: boolean;
+  mine: boolean;
   secret_key: bigint;
   peers: AddressOptPort[];
 };
@@ -21,17 +22,23 @@ const config_schema: ConfigSchema<ConfigTypes> = {
     flag: "port",
     default: 16936,
   },
-  secret_key: {
-    validator: V.bigint_range(0n, bits_mask(256n)),
-    env: "SECRET_KEY",
-    default: 0n,
-    sensitive: true,
-  },
   display: {
     validator: V.yes_no,
     env: "DISPLAY",
     flag: "display",
     default: false,
+  },
+  mine: {
+    validator: V.yes_no,
+    env: "MINE",
+    flag: "mine",
+    default: false,
+  },
+  secret_key: {
+    validator: V.bigint_range(0n, bits_mask(256n)),
+    env: "SECRET_KEY",
+    default: 0n,
+    sensitive: true,
   },
   peers: {
     validator: V.list(V.address_opt_port),
