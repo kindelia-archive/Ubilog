@@ -11,8 +11,13 @@ import { AddressPort, Bits, Octuple, Quadruple, Tag } from "./types/mod.ts";
 import * as T from "./types/mod.ts";
 import type { U16, U256, U64, U8 } from "./types/numbers/mod.ts";
 import { u16, u256, u64, u8 } from "./types/numbers/mod.ts";
-import { keccak256 } from "./keccak256.ts";
+
+import List, * as list from "./list.ts"
+import Heap, * as heap from "./heap.ts"
+
 import { cfg_nt, GetEnv, load_config_file, resolve_config } from "./config.ts";
+import { keccak256 } from "./keccak256.ts";
+
 
 // Configuration:
 // ~/.ubilog/config
@@ -31,12 +36,12 @@ const DIR_MINED = "data/mined";
 // Types
 // =====
 
-// Blockchain
-// ----------
-
 type Dict<T> = Record<string, T>;
 
-type Nat = bigint;
+type Nat = bigint;  // TODO: tagged type
+
+// Blockchain
+// ----------
 
 type Hash = string & Tag<"Hash">; // 0x0000000000000000000000000000000000000000000000000000000000000000
 type Body = Uint8Array & Tag<"Body">; // 1280 bytes
@@ -63,30 +68,24 @@ type Chain = {
 // Network
 // -------
 
-// type IPv4 = { ctor: "IPv4"; port: U16; val0: U8; val1: U8; val2: U8; val3: U8 };
-// type IPv6 = { ctor: "IPv6"; port: U16; segments: number[] };
-// type Address = IPv4 | IPv6;
-
 type Peer = {
   seen_at: Nat;
   address: AddressPort;
 };
 
-type Cons<T> = { ctor: "Cons"; head: T; tail: List<T> };
-type Nil<T> = { ctor: "Nil" };
-type List<T> = Cons<T> | Nil<T>;
+// ==== Slice, Post, dunno ====
 
-type HNode<A> = { ctor: "HNode"; value: [bigint, A]; child: List<Heap<A>> };
-type Empty<A> = { ctor: "Empty" };
-type Heap<A> = Empty<A> | HNode<A>;
+// on L2: set of transactions, kind of L2 "block"
+// should/could be a set of related transactions (by monetary incentive)
 
+// TODO: rename to Post?
 type Slice = { work: U64; data: Bits };
 
 type PutPeers = { ctor: "PutPeers"; peers: AddressPort[] };
 type PutBlock = { ctor: "PutBlock"; block: Block };
 type AskBlock = { ctor: "AskBlock"; b_hash: Hash };
-type PutSlices = { ctor: "PutSlices"; slices: Slice[] };
-type Message = PutPeers | PutBlock | AskBlock | PutSlices;
+type PutSlice = { ctor: "PutSlice"; slice: Slice };
+type Message = PutPeers | PutBlock | AskBlock | PutSlice;
 
 type Mail = {
   sent_by: Peer;
@@ -97,7 +96,7 @@ type Node = {
   port: number; // TODO: U16
   peers: Dict<Peer>;
   chain: Chain;
-  // slices: Heap<List<Slice>>
+  pool: Heap<List<Slice>>
 };
 
 function HASH(hash: string): Hash {
@@ -149,34 +148,6 @@ function pad_left(length: number, fill: string, str: string) {
     str = fill + str;
   }
   return str.slice(0, length);
-}
-
-// Lists
-// -----
-
-function cons<T>(head: T, tail: List<T>): List<T> {
-  return { ctor: "Cons", head, tail };
-}
-
-function nil<T>(): List<T> {
-  return { ctor: "Nil" };
-}
-
-function array_to_list<T>(array: T[], index: number = 0): List<T> {
-  if (index === array.length) {
-    return nil();
-  } else {
-    return cons(array[index], array_to_list(array, index + 1));
-  }
-}
-
-function list_to_array<T>(list: List<T>): Array<T> {
-  const array = [];
-  while (list.ctor !== "Nil") {
-    array.push(list.head);
-    list = list.tail;
-  }
-  return array;
 }
 
 // Bits
@@ -609,14 +580,14 @@ function deserialize_list<T>(
   bits: Bits,
 ): [Bits, List<T>] {
   if (bits[0] === "0") {
-    return [T.bits.slice(1)(bits), nil()];
+    return [T.bits.slice(1)(bits), list.empty];
   } else if (bits[0] === "1") {
     let head, tail;
     [bits, head] = item(T.bits.slice(1)(bits));
     [bits, tail] = deserialize_list(item, bits);
-    return [bits, cons(head, tail)];
+    return [bits, list.cons(head, tail)];
   } else {
-    return [T.bits.empty, nil()];
+    return [T.bits.empty, list.empty];
   }
 }
 
@@ -740,7 +711,7 @@ function serialize_message(message: Message): Bits {
       const code0 = T.bits.from("0000");
       const peers = serialize_list(
         serialize_address,
-        array_to_list(message.peers),
+        list.from_array(message.peers),
       );
       return T.bits.concat(code0, peers);
     }
@@ -754,13 +725,14 @@ function serialize_message(message: Message): Bits {
       const b_hash = serialize_hash(message.b_hash);
       return T.bits.concat(code2, b_hash);
     }
-    case "PutSlices": {
+    case "PutSlice": {
       const code3 = T.bits.from("1100");
-      const slices = serialize_list(
-        serialize_slice,
-        array_to_list(message.slices),
-      );
-      return T.bits.concat(code3, slices);
+      // const slices = serialize_list(
+      //   serialize_slice,
+      //   array_to_list(message.slices),
+      // );
+      const slice = serialize_slice(message.slice);
+      return T.bits.concat(code3, slice);
     }
   }
 }
@@ -773,7 +745,7 @@ function deserialize_message(bits: Bits): [Bits, Message] {
     case "0000": {
       let peers;
       [bits, peers] = deserialize_list(deserialize_address, bits);
-      return [bits, { ctor: "PutPeers", peers: list_to_array(peers) }];
+      return [bits, { ctor: "PutPeers", peers: list.to_array(peers) }];
     }
     case "1000": {
       let block;
@@ -786,10 +758,12 @@ function deserialize_message(bits: Bits): [Bits, Message] {
       return [bits, { ctor: "AskBlock", b_hash }];
     }
     case "1100": {
-      let slices_: List<Slice>;
-      [bits, slices_] = deserialize_list(deserialize_slice, bits);
-      const slices = list_to_array(slices_);
-      return [bits, { ctor: "PutSlices", slices }];
+      // let slices_: List<Slice>;
+      // [bits, slices_] = deserialize_list(deserialize_slice, bits);
+      // const slices = list_to_array(slices_);
+      let slice;
+      [bits, slice] = deserialize_slice(bits)
+      return [bits, { ctor: "PutSlice", slice }];
     }
   }
   throw "bad message deserialization"; // TODO: handle error on bad serialization of messages
@@ -950,7 +924,12 @@ export function start_node(
 
   const chain: Chain = initial_chain();
   // var slices : Heap<Slice> = {ctor: "Empty"};
-  const node: Node = { port: cfg.port, peers: initial_peers, chain };
+  const node: Node = {
+    port: cfg.port,
+    peers: initial_peers,
+    chain,
+    pool: { ctor: "Empty" },
+  };
 
   const body: Body = EmptyBody;
   body[0] = (cfg.port >> 8) % 0xff; // DEBUG
@@ -1023,8 +1002,8 @@ export function start_node(
         }
         return;
       }
-      case "PutSlices": {
-        console.log("<- received PutSlices".padEnd(30, " ")); // DEBUG
+      case "PutSlice": {
+        console.log("<- received PutSlice".padEnd(30, " ")); // DEBUG
         // const work = get_hash_work(hash_slice(message.slice));
         // node.slices = heap_insert([work, message.slice], node.slices);
         return;

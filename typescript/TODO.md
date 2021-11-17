@@ -1,8 +1,7 @@
 # TODO
 
-- test networking
-- implement IPv6
 - slices processing
+- implement IPv6
 - test slices
 
 - Deno executable?
