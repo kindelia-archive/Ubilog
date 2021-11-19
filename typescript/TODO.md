@@ -1,10 +1,11 @@
 # TODO
 
-- slices processing
-- implement IPv6
-- test slices
+- mined slices tracking
+- block assembly
 
-- Deno executable?
+- CLI client
+
+- Deno executable
 
 - mined rands on one JSONL per secret key
 
@@ -16,10 +17,12 @@
   - FFI
   - bind gen?
 
+- pool size limit
+
+- implement IPv6
+  - investigate why Deno isn't accepting IPv6 addresses
+
 ---
 
-- refactor and split ubilog.ts file
-
 - document lib/
-
 - metrics endpoint?

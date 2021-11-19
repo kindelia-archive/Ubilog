@@ -14,7 +14,7 @@ DTACH_DIR="${BASE_DIR}/dtach"
 mkdir -p "${DATA_DIR}"
 mkdir -p "${DTACH_DIR}"
 
-ubilog_cmd=(deno run --unstable -A ./src/ubilog.ts)
+ubilog_cmd=(deno run --unstable -A ./src/cli.ts)
 
 base_port=42000
 ports=()

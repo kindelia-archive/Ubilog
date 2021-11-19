@@ -1,12 +1,10 @@
-type Cons<T> = { ctor: "Cons"; head: T; tail: List<T> };
-type Nil<T> = { ctor: "Nil" };
-type List<T> = Cons<T> | Nil<T>;
+import type { List } from "./list.ts";
 
-type HNode<A> = { ctor: "HNode"; value: [bigint, A]; child: List<Heap<A>> };
-type Empty<A> = { ctor: "Empty" };
-type Heap<A> = Empty<A> | HNode<A>;
+export type Empty = { ctor: "Empty" };
+export type HNode<A> = { ctor: "HNode"; value: [bigint, A]; child: List<Heap<A>> };
+export type Heap<A> = Empty | HNode<A>;
 
-export default Heap;
+export const empty: Empty = { ctor: "Empty" };
 
 export function merge<A>(a: Heap<A>, b: Heap<A>): Heap<A> {
   if (a.ctor === "Empty") {
@@ -39,7 +37,7 @@ function merge_pairs<A>(pairs: List<Heap<A>>): Heap<A> {
         case "Cons":
           return merge(
             merge(pairs.head, pairs.tail.head),
-            merge_pairs(pairs.tail.tail)
+            merge_pairs(pairs.tail.tail),
           );
       }
   }

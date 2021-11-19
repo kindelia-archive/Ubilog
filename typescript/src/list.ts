@@ -1,11 +1,8 @@
 export type Cons<A> = { ctor: "Cons"; head: A; tail: List<A> };
 export type Nil = { ctor: "Nil" };
-
 export type List<A> = Cons<A> | Nil;
 
-export default List;
-
-export const empty: Nil = {ctor: "Nil"}
+export const empty: Nil = { ctor: "Nil" };
 
 export function cons<A>(head: A, tail: List<A>): List<A> {
   return { ctor: "Cons", head, tail };

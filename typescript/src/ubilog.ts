@@ -1,23 +1,37 @@
-// deno-lint-ignore-file camelcase no-inferrable-types
-import { parse as parse_args } from "https://deno.land/std@0.113.0/flags/mod.ts";
-import * as path from "https://deno.land/std@0.110.0/path/mod.ts";
+// deno-lint-ignore-file camelcase
 
-import { break_list, default_or_convert, drop_while } from "./lib/functional/mod.ts";
-import { is_json_object } from "./lib/json.ts";
+// import { Set as ImmSet } from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
+
 import { get_dir_with_base } from "./lib/files.ts";
-import { bits_mask } from "./lib/numbers.ts";
+import type { U256, U64 } from "./lib/numbers/mod.ts";
+import { u16, u256, u64, bits_mask } from "./lib/numbers/mod.ts";
 
-import { AddressPort, Bits, Octuple, Quadruple, Tag } from "./types/mod.ts";
-import * as T from "./types/mod.ts";
-import type { U16, U256, U64, U8 } from "./types/numbers/mod.ts";
-import { u16, u256, u64, u8 } from "./types/numbers/mod.ts";
+import { AddressPort, Bits } from "./types/mod.ts";
+import * as bits from "./types/bits.ts";
 
-import List, * as list from "./list.ts"
-import Heap, * as heap from "./heap.ts"
+import type { Heap } from "./heap.ts";
+import * as heap from "./heap.ts";
 
-import { cfg_nt, GetEnv, load_config_file, resolve_config } from "./config.ts";
+import type { Hash, HashMap } from "./types/hash.ts";
+import * as hash from "./types/hash.ts";
+import type { Block, BlockBody, Chain, Slice } from "./types/blockchain.ts";
+import type { Message, Peer } from "./types/network.ts";
+
+import {
+  deserialize_block,
+  deserialize_message,
+  serialize_address,
+  serialize_bits,
+  serialize_block,
+  serialize_message,
+  serialize_slice,
+} from "./serialization.ts";
+
+import * as address from "./address.ts";
 import { keccak256 } from "./keccak256.ts";
+import { pad_left } from "./util.ts";
 
+import type { AddressOptPort } from "./config.ts"; // TODO: remove
 
 // Configuration:
 // ~/.ubilog/config
@@ -26,89 +40,50 @@ import { keccak256 } from "./keccak256.ts";
 // ~/.ubilog/data/mined/HASH
 
 // Constants
-// ---------
+// =========
 
-const BODY_SIZE = 1280;
+import {
+  BLOCKS_PER_PERIOD,
+  BODY_SIZE,
+  DEFAULT_PORT,
+  DELAY_TOLERANCE,
+  DIR_BLOCKS,
+  DIR_MINED,
+  TIME_PER_BLOCK,
+  TIME_PER_PERIOD,
+} from "./constants.ts";
 
-const DIR_BLOCKS = "data/blocks";
-const DIR_MINED = "data/mined";
+export const EMPTY_BODY: BlockBody = new Uint8Array(BODY_SIZE) as BlockBody;
+
+export const BLOCK_ZERO: Block = {
+  prev: hash.zero,
+  time: u256.zero,
+  body: EMPTY_BODY,
+};
+
+const DEFAULT_SCORE = (slice: Slice) => get_hash_work(hash_slice(slice));
 
 // Types
 // =====
 
 type Dict<T> = Record<string, T>;
 
-type Nat = bigint;  // TODO: tagged type
-
-// Blockchain
-// ----------
-
-type Hash = string & Tag<"Hash">; // 0x0000000000000000000000000000000000000000000000000000000000000000
-type Body = Uint8Array & Tag<"Body">; // 1280 bytes
-
-type HashMap<T> = Map<Hash, T>;
-
-type Block = {
-  prev: Hash;
-  time: U256;
-  body: Body; // 1280 bytes
-};
-
-type Chain = {
-  block: HashMap<Block>;
-  children: HashMap<Array<Hash>>;
-  pending: HashMap<Array<Block>>;
-  work: HashMap<Nat>;
-  height: HashMap<Nat>;
-  target: HashMap<Nat>;
-  seen: HashMap<true>;
-  tip: [U64, Hash];
-};
+type Nat = bigint; // TODO: tagged type
 
 // Network
 // -------
-
-type Peer = {
-  seen_at: Nat;
-  address: AddressPort;
-};
-
-// ==== Slice, Post, dunno ====
-
-// on L2: set of transactions, kind of L2 "block"
-// should/could be a set of related transactions (by monetary incentive)
-
-// TODO: rename to Post?
-type Slice = { work: U64; data: Bits };
-
-type PutPeers = { ctor: "PutPeers"; peers: AddressPort[] };
-type PutBlock = { ctor: "PutBlock"; block: Block };
-type AskBlock = { ctor: "AskBlock"; b_hash: Hash };
-type PutSlice = { ctor: "PutSlice"; slice: Slice };
-type Message = PutPeers | PutBlock | AskBlock | PutSlice;
-
-type Mail = {
-  sent_by: Peer;
-  message: Message;
-};
 
 type Node = {
   port: number; // TODO: U16
   peers: Dict<Peer>;
   chain: Chain;
-  pool: Heap<List<Slice>>
+  pool: Heap<Slice>;
 };
-
-function HASH(hash: string): Hash {
-  if (/^0x[0-9A-Fa-f]{64}$/.test(hash)) {
-    return hash as Hash;
-  } else {
-    throw new Error("INCORRECT HASH FORMAT.");
-  }
-}
 
 // Algorithms
 // ==========
+
+const HASH = hash.assert;
 
 // Util
 
@@ -134,20 +109,9 @@ function now(): bigint {
 
 const MASK_64: bigint = bits_mask(64n);
 const MASK_192: bigint = bits_mask(192n);
-// const MASK_256: bigint = bits_mask(256n);
 
 function next_power_of_two(x: number): number {
   return x <= 1 ? x : 2 ** (Math.floor(Math.log(x - 1) / Math.log(2)) + 1);
-}
-
-// Strings
-// -------
-
-function pad_left(length: number, fill: string, str: string) {
-  while (str.length < length) {
-    str = fill + str;
-  }
-  return str.slice(0, length);
 }
 
 // Bits
@@ -161,7 +125,6 @@ function bits_to_uint8array(bits: Bits): Uint8Array {
       let numb = 0;
       for (let j = 0; j < 8; ++j) {
         numb *= 2;
-        //console.log(i, j, "read", bits[i + 8 - j - 1])
         if (bits[i + 8 - j - 1] === "1") {
           numb += 1;
         }
@@ -175,51 +138,19 @@ function bits_to_uint8array(bits: Bits): Uint8Array {
 
 function uint8array_to_bits(buff: Uint8Array): Bits {
   const size = (buff[0] ?? 0) + (buff[1] ?? 0) * 256;
-  let bits = "" as Bits;
+  let result = bits.empty;
   for (let i = 2; i < buff.length; ++i) {
     const val = buff[i] ?? 0;
-    for (let j = 0; j < 8 && bits.length < size; ++j) {
+    for (let j = 0; j < 8 && result.length < size; ++j) {
       const bit = (val >>> j) & 1 ? "1" : "0";
-      bits = T.bits.push(bit)(bits);
+      result = bits.push(bit)(result);
     }
   }
-  return bits;
+  return result;
 }
-
-// Numbers
-// -------
-
-// function compress_nat(numb: Nat): U64 {
-//   let exp = 0n;
-//   while (2n ** exp <= numb) {
-//     exp += 1n;
-//   }
-//   let drop = exp - 48n;
-//   drop = drop < 0n ? 0n : drop;
-//   numb = ((numb >> drop) << 16n) | drop;
-//   return numb & 0xffffffffffffffffn;
-// }
-
-// function decompress_nat(pack: U64): Nat {
-//   const drop = pack & 0xffffn;
-//   const numb = (pack >> 16n) << drop;
-//   return numb;
-// }
 
 // Hashing
 // -------
-
-const HashZero: Hash = HASH(
-  "0x0000000000000000000000000000000000000000000000000000000000000000",
-);
-
-// function u64_to_uint8array(value: U64): Uint8Array {
-//   const bytes: number[] = [];
-//   for (let i = 0; i < 8; ++i) {
-//     bytes.push(Number((value >> BigInt((8 - i - 1) * 8)) % 0x100n));
-//   }
-//   return new Uint8Array(bytes);
-// }
 
 function u256_to_uint8array(value: U256): Uint8Array {
   const bytes: number[] = [];
@@ -266,8 +197,8 @@ function hash_uint8array(words: Uint8Array): Hash {
 }
 
 function hash_block(block: Block): Hash {
-  if (block.prev === HashZero && block.time === 0n) {
-    return HashZero;
+  if (block.prev === hash.zero && block.time === 0n) {
+    return hash.zero;
   } else {
     return hash_uint8array(
       new Uint8Array([
@@ -279,9 +210,9 @@ function hash_block(block: Block): Hash {
   }
 }
 
-//function hash_slice(slice: Slice) : Hash {
-//return hash_uint8array(bits_to_uint8array(serialize_slice(slice)));
-//}
+function hash_slice(slice: Slice): Hash {
+  return hash_uint8array(bits_to_uint8array(serialize_slice(slice)));
+}
 
 // Attempts to mine a block by changing the least significant 192 bits of its
 // time until its hash is larger than a target, up to an maximum number of
@@ -339,125 +270,118 @@ function mine(
 // Chain
 // -----
 
-// don't accept blocks from 1 hour in the future
-const DELAY_TOLERANCE: Nat = 60n * 60n * 1000n;
-
-// readjusts difficulty every 20 blocks
-const BLOCKS_PER_PERIOD: Nat = 20n;
-
-// 1 second per block
-const TIME_PER_BLOCK: Nat = 1000n;
-
-// readjusts difficulty every 60 seconds
-const TIME_PER_PERIOD: Nat = TIME_PER_BLOCK * BLOCKS_PER_PERIOD;
-
 // initial target of 256 hashes per block
 const INITIAL_TARGET: Nat = compute_target(256n);
 
-const EmptyBody: Body = new Uint8Array(BODY_SIZE) as Body;
-
-const BlockZero: Block = {
-  prev: HashZero,
-  time: u256.zero,
-  body: EmptyBody,
-};
-
 function initial_chain(): Chain {
-  const block: HashMap<Block> = new Map([[HashZero, BlockZero]]);
-  const children: HashMap<Array<Hash>> = new Map([[HashZero, []]]);
+  const block: HashMap<Block> = new Map([[hash.zero, BLOCK_ZERO]]);
+  const children: HashMap<Array<Hash>> = new Map([[hash.zero, []]]);
   const pending: HashMap<Array<Block>> = new Map();
-  const work: HashMap<U64> = new Map([[HashZero, u64.zero]]);
-  const height: HashMap<Nat> = new Map([[HashZero, 0n]]);
-  const target: HashMap<Nat> = new Map([[HashZero, INITIAL_TARGET]]);
+  const work: HashMap<U64> = new Map([[hash.zero, u64.zero]]);
+  const height: HashMap<Nat> = new Map([[hash.zero, 0n]]);
+  const target: HashMap<Nat> = new Map([[hash.zero, INITIAL_TARGET]]);
   const seen: HashMap<true> = new Map();
-  const tip: [U64, Hash] = [u64.zero, HashZero];
+  const tip: [U64, Hash] = [u64.zero, hash.zero];
   return { block, children, pending, work, height, target, seen, tip };
 }
 
-function add_block(chain: Chain, block: Block, time: T.U64) {
+function add_block(chain: Chain, block: Block): Block[] {
+  const b_hash = hash_block(block);
+  if (chain.block.get(b_hash) !== undefined) {
+    // Block is already present in the database
+    return [];
+  }
+
+  let pending: Block[] = [];
+  const p_hash = block.prev;
+  // If previous block is not available
+  if (chain.block.get(p_hash) === undefined) {
+    // And this block was not been seen before
+    if (chain.seen.get(b_hash) === undefined) {
+      // Add this block to the previous block's pending list
+      console.log(" ^^ pending block".padEnd(30, " "), b_hash); // DEBUG
+      chain.pending.set(p_hash, chain.pending.get(p_hash) ?? []);
+      get_assert(chain.pending, p_hash).push(block);
+    }
+  } // If previous block is available, add the block
+  else {
+    console.log("  ++ adding block".padEnd(30, " "), b_hash); // DEBUG
+    const work = get_hash_work(b_hash);
+    // TODO: ??
+    chain.block.set(b_hash, block);
+    chain.work.set(b_hash, 0n);
+    chain.height.set(b_hash, 0n);
+    chain.target.set(b_hash, 0n);
+    chain.children.set(b_hash, []);
+    const p_block = get_assert(chain.block, p_hash);
+    const p_target = get_assert(chain.target, p_hash);
+    const has_enough_work = BigInt(b_hash) >= p_target;
+    const b_time = block.time >> 192n;
+    const p_time = p_block.time >> 192n;
+    const advances_time = b_time > p_time;
+    // If the block is valid
+    if (has_enough_work && advances_time) {
+      const p_work = get_assert(chain.work, p_hash);
+      chain.work.set(b_hash, p_work + work);
+      if (p_hash !== hash.zero) {
+        const p_height = get_assert(chain.height, p_hash);
+        chain.height.set(b_hash, p_height + 1n);
+      }
+      if (
+        get_assert(chain.height, b_hash) > 0n &&
+        get_assert(chain.height, b_hash) % BLOCKS_PER_PERIOD === 0n
+      ) {
+        // Update difficulty
+        let checkpoint_hash = p_hash;
+        for (let i = 0n; i < BLOCKS_PER_PERIOD - 1n; ++i) {
+          checkpoint_hash = get_assert(chain.block, checkpoint_hash).prev;
+        }
+        const period_time = Number(
+          b_time - (get_assert(chain.block, checkpoint_hash).time >> 192n),
+        );
+        const last_target = get_assert(chain.target, p_hash);
+        const scale = BigInt(
+          Math.floor((2 ** 32 * Number(TIME_PER_PERIOD)) / period_time),
+        );
+        const next_target = compute_next_target(last_target, scale);
+        chain.target.set(b_hash, next_target);
+        // console.log();
+        // console.log("[DIFF] A period should last   " + TIME_PER_PERIOD + " seconds.");
+        // console.log("[DIFF] the last period lasted " + period_time + " seconds.");
+        // console.log("[DIFF] the last difficulty was " + compute_difficulty(last_target) + " hashes per block.");
+        // console.log("[DIFF] the next difficulty is  " + compute_difficulty(next_target) + " hashes per block.");
+        // console.log();
+      } else {
+        // Keep old difficulty
+        chain.target.set(b_hash, get_assert(chain.target, p_hash));
+      }
+      // Refresh tip
+      if (get_assert(chain.work, b_hash) > chain.tip[0]) {
+        chain.tip = [u64.mask(get_assert(chain.work, b_hash)), b_hash];
+      }
+    }
+    // Registers this block as a child
+    get_assert(chain.children, p_hash).push(b_hash);
+    // Returns all blocks that were waiting for this block
+    pending = chain.pending.get(b_hash) ?? [];
+    chain.pending.delete(b_hash);
+  }
+  chain.seen.set(b_hash, true);
+  return pending;
+}
+
+function handle_block(chain: Chain, block: Block, time: U64) {
   const must_add: Block[] = [block];
   while (must_add.length > 0) {
-    const block = must_add.pop() ?? BlockZero;
+    const block = must_add.pop() ?? BLOCK_ZERO;
     const b_time = block.time >> 192n;
-    const b_hash = hash_block(block);
     if (b_time < BigInt(time) + DELAY_TOLERANCE) {
       // Block has valid time
-      if (chain.block.get(b_hash) === undefined) {
-        // Block is not present in the database
-        const p_hash = block.prev;
-        // If previous block is available, add the block
-        // TODO: extract function to add mined blocks?
-        if (chain.block.get(p_hash) !== undefined) {
-          console.log("  ++ adding block".padEnd(30, " "), b_hash); // DEBUG
-          const work = get_hash_work(b_hash);
-          // const ptime = chain.block
-          chain.block.set(b_hash, block);
-          chain.work.set(b_hash, 0n);
-          chain.height.set(b_hash, 0n);
-          chain.target.set(b_hash, 0n);
-          chain.children.set(b_hash, []);
-          // If the block is valid
-          const p_block = get_assert(chain.block, p_hash);
-          const p_target = get_assert(chain.target, p_hash);
-          const has_enough_work = BigInt(b_hash) >= p_target;
-          const advances_time = b_time > p_block.time >> 192n;
-          if (has_enough_work && advances_time) {
-            const p_work = get_assert(chain.work, p_hash);
-            chain.work.set(b_hash, p_work + work);
-            if (p_hash !== HashZero) {
-              const p_height = get_assert(chain.height, p_hash);
-              chain.height.set(b_hash, p_height + 1n);
-            }
-            if (
-              get_assert(chain.height, b_hash) > 0n &&
-              get_assert(chain.height, b_hash) % BLOCKS_PER_PERIOD === 0n
-            ) {
-              // Update difficulty
-              let checkpoint_hash = p_hash;
-              for (let i = 0n; i < BLOCKS_PER_PERIOD - 1n; ++i) {
-                checkpoint_hash = get_assert(chain.block, checkpoint_hash).prev;
-              }
-              const period_time = Number(
-                b_time - (get_assert(chain.block, checkpoint_hash).time >> 192n),
-              );
-              const last_target = get_assert(chain.target, p_hash);
-              const scale = BigInt(
-                Math.floor((2 ** 32 * Number(TIME_PER_PERIOD)) / period_time),
-              );
-              const next_target = compute_next_target(last_target, scale);
-              chain.target.set(b_hash, next_target);
-              // console.log();
-              // console.log("[DIFF] A period should last   " + TIME_PER_PERIOD + " seconds.");
-              // console.log("[DIFF] the last period lasted " + period_time + " seconds.");
-              // console.log("[DIFF] the last difficulty was " + compute_difficulty(last_target) + " hashes per block.");
-              // console.log("[DIFF] the next difficulty is  " + compute_difficulty(next_target) + " hashes per block.");
-              // console.log();
-            } else {
-              // Keep old difficulty
-              chain.target.set(b_hash, get_assert(chain.target, p_hash));
-            }
-            // Refresh tip
-            if (get_assert(chain.work, b_hash) > chain.tip[0]) {
-              chain.tip = [u64.mask(get_assert(chain.work, b_hash)), b_hash];
-            }
-          }
-          // Registers this block as a child
-          get_assert(chain.children, p_hash).push(b_hash);
-          // Add all blocks that were waiting for this block
-          for (const pending of chain.pending.get(b_hash) ?? []) {
-            must_add.push(pending);
-          }
-          chain.pending.delete(b_hash);
-          // Otherwise, add this block to the previous block's pending list
-        } else if (chain.seen.get(b_hash) === undefined) {
-          console.log(" ^^ pending block".padEnd(30, " "), b_hash); // DEBUG
-          chain.pending.set(p_hash, chain.pending.get(p_hash) ?? []);
-          get_assert(chain.pending, p_hash).push(block);
-        }
-        chain.seen.set(b_hash, true);
+      const pending_children = add_block(chain, block);
+      // Add all blocks that were waiting for this block
+      for (const pending of pending_children) {
+        must_add.push(pending);
       }
-    } else {
-      console.log("  D: block time invalid".padEnd(30, " "), b_hash); // DEBUG
     }
   }
 }
@@ -467,7 +391,7 @@ function get_longest_chain(chain: Chain): Array<Block> {
   let b_hash = chain.tip[1];
   while (true) {
     const block = chain.block.get(b_hash);
-    if (block == undefined || b_hash === HashZero) {
+    if (block == undefined || b_hash === hash.zero) {
       break;
     }
     longest.push(block);
@@ -478,14 +402,6 @@ function get_longest_chain(chain: Chain): Array<Block> {
 
 // Stringification
 // ---------------
-
-function get_address_hostname(address: AddressPort): string {
-  switch (address._) {
-    case "IPv4":
-      return address.octets.join(".");
-  }
-  throw "FAILURE";
-}
 
 function show_block(chain: Chain, block: Block, index: number) {
   const b_hash = hash_block(block);
@@ -528,325 +444,10 @@ function show_chain(chain: Chain, lines: number) {
   return text;
 }
 
-// Serialization
-// -------------
-
-function serialize_fixed_len(size: number, value: Nat): Bits {
-  if (size > 0) {
-    const head = value % 2n === 0n ? "0" : "1";
-    const tail = serialize_fixed_len(size - 1, value / 2n); // ?? >> 1n ?
-    return T.bits.push_front(head)(tail);
-  } else {
-    return T.bits.empty;
-  }
-}
-
-function deserialize_fixed_len(size: number, bits: Bits): [Bits, Nat] {
-  if (size === 0) {
-    return [bits, 0n];
-  } else {
-    if (bits[0] === "0") {
-      let x;
-      [bits, x] = deserialize_fixed_len(size - 1, T.bits.slice(1)(bits));
-      return [bits, x * 2n];
-    } else if (bits[0] === "1") {
-      let x;
-      [bits, x] = deserialize_fixed_len(size - 1, T.bits.slice(1)(bits));
-      return [bits, x * 2n + 1n];
-    } else {
-      return [T.bits.empty, 0n];
-    }
-  }
-}
-
-function serialize_list<T>(item: (x: T) => Bits, list: List<T>): Bits {
-  switch (list.ctor) {
-    case "Nil": {
-      const bit0 = "0";
-      return T.bits.from(bit0);
-    }
-    case "Cons": {
-      const bit1 = "1";
-      const head = item(list.head);
-      const tail = serialize_list(item, list.tail);
-      const ser = T.bits.concat(head, tail);
-      return T.bits.push_front(bit1)(ser);
-    }
-  }
-}
-
-function deserialize_list<T>(
-  item: (x: Bits) => [Bits, T],
-  bits: Bits,
-): [Bits, List<T>] {
-  if (bits[0] === "0") {
-    return [T.bits.slice(1)(bits), list.empty];
-  } else if (bits[0] === "1") {
-    let head, tail;
-    [bits, head] = item(T.bits.slice(1)(bits));
-    [bits, tail] = deserialize_list(item, bits);
-    return [bits, list.cons(head, tail)];
-  } else {
-    return [T.bits.empty, list.empty];
-  }
-}
-
-function serialize_address(address: AddressPort): Bits {
-  switch (address._) {
-    case "IPv4": {
-      const bit0 = "0";
-      const val0 = serialize_fixed_len(8, BigInt(address.octets[0]));
-      const val1 = serialize_fixed_len(8, BigInt(address.octets[1]));
-      const val2 = serialize_fixed_len(8, BigInt(address.octets[2]));
-      const val3 = serialize_fixed_len(8, BigInt(address.octets[3]));
-      const port = serialize_fixed_len(16, BigInt(address.port));
-      return T.bits.push_front(bit0)(
-        T.bits.concat(val0, val1, val2, val3, port),
-      );
-    }
-  }
-  throw new Error("FAILURE: unknown address type");
-}
-
-function deserialize_address(bits: Bits): [Bits, AddressPort] {
-  if (bits[0] === "0") {
-    let val0, val1, val2, val3, port;
-    bits = T.bits.slice(1)(bits);
-    [bits, val0] = deserialize_fixed_len(8, bits);
-    [bits, val1] = deserialize_fixed_len(8, bits);
-    [bits, val2] = deserialize_fixed_len(8, bits);
-    [bits, val3] = deserialize_fixed_len(8, bits);
-    [bits, port] = deserialize_fixed_len(16, bits);
-    const octets = [val0, val1, val2, val3]
-      .map(Number)
-      .map(u8.mask) as Quadruple<U8>;
-    return [
-      bits,
-      {
-        _: "IPv4",
-        octets,
-        port: u16.mask(Number(port)),
-      },
-    ];
-  } else {
-    throw "Bad address deserialization.";
-  }
-}
-
-function serialize_bits(data: Bits): Bits {
-  const size = serialize_fixed_len(16, BigInt(data.length));
-  return T.bits.concat(size, data);
-}
-
-function deserialize_bits(bits: Bits): [Bits, Bits] {
-  let size_: bigint, data: Bits;
-  [bits, size_] = deserialize_fixed_len(16, bits);
-  const size = Number(size_);
-  [bits, data] = [T.bits.slice(size)(bits), T.bits.slice(0, size)(bits)];
-  return [bits, data];
-}
-
-function serialize_slice(slice: Slice): Bits {
-  const work = serialize_fixed_len(64, slice.work);
-  const data = serialize_bits(slice.data);
-  return T.bits.concat(work, data);
-}
-
-function deserialize_slice(bits: Bits): [Bits, Slice] {
-  let work_: bigint, data: Bits;
-  [bits, work_] = deserialize_fixed_len(64, bits);
-  [bits, data] = deserialize_bits(bits);
-  const work = u64.mask(work_); // TODO: fix size mask redundancy, refactor `deserialize_fixed_len`;
-  return [bits, { work, data }];
-}
-
-function serialize_uint8array(bytes: number, array: Uint8Array): Bits {
-  let bits = T.bits.empty;
-  for (let i = 0; i < bytes; ++i) {
-    const ser = serialize_fixed_len(8, BigInt(array[i]));
-    bits = T.bits.concat(bits, ser);
-  }
-  return bits;
-}
-
-function deserialize_uint8array(bytes: number, bits: Bits): [Bits, Uint8Array] {
-  const vals = [];
-  for (let i = 0; i < bytes; ++i) {
-    let val: bigint;
-    [bits, val] = deserialize_fixed_len(8, bits);
-    vals.push(Number(val));
-  }
-  return [bits, new Uint8Array(vals)];
-}
-
-function serialize_hash(hash: Hash): Bits {
-  return serialize_fixed_len(256, BigInt(HASH(hash)));
-}
-
-function deserialize_hash(bits: Bits): [Bits, Hash] {
-  let nat;
-  [bits, nat] = deserialize_fixed_len(256, bits);
-  return [bits, HASH("0x" + pad_left(64, "0", nat.toString(16)))];
-}
-
-function serialize_block(block: Block): Bits {
-  const prev = serialize_hash(block.prev);
-  const time = serialize_fixed_len(256, block.time);
-  const body = serialize_uint8array(BODY_SIZE, block.body);
-  return T.bits.concat(prev, time, body);
-}
-
-function deserialize_block(bits: Bits): [Bits, Block] {
-  let prev, time, body;
-  [bits, prev] = deserialize_hash(bits);
-  [bits, time] = deserialize_fixed_len(256, bits);
-  [bits, body] = deserialize_uint8array(BODY_SIZE, bits);
-  time = u256.mask(time);
-  return [bits, { prev, time, body: body as Body }];
-}
-
-function serialize_message(message: Message): Bits {
-  switch (message.ctor) {
-    case "PutPeers": {
-      const code0 = T.bits.from("0000");
-      const peers = serialize_list(
-        serialize_address,
-        list.from_array(message.peers),
-      );
-      return T.bits.concat(code0, peers);
-    }
-    case "PutBlock": {
-      const code1 = T.bits.from("1000");
-      const block = serialize_block(message.block);
-      return T.bits.concat(code1, block);
-    }
-    case "AskBlock": {
-      const code2 = T.bits.from("0100");
-      const b_hash = serialize_hash(message.b_hash);
-      return T.bits.concat(code2, b_hash);
-    }
-    case "PutSlice": {
-      const code3 = T.bits.from("1100");
-      // const slices = serialize_list(
-      //   serialize_slice,
-      //   array_to_list(message.slices),
-      // );
-      const slice = serialize_slice(message.slice);
-      return T.bits.concat(code3, slice);
-    }
-  }
-}
-
-function deserialize_message(bits: Bits): [Bits, Message] {
-  const CODE_SIZE = 4;
-  const code = T.bits.slice(0, CODE_SIZE)(bits);
-  bits = T.bits.slice(CODE_SIZE)(bits);
-  switch (code) {
-    case "0000": {
-      let peers;
-      [bits, peers] = deserialize_list(deserialize_address, bits);
-      return [bits, { ctor: "PutPeers", peers: list.to_array(peers) }];
-    }
-    case "1000": {
-      let block;
-      [bits, block] = deserialize_block(bits);
-      return [bits, { ctor: "PutBlock", block }];
-    }
-    case "0100": {
-      let b_hash;
-      [bits, b_hash] = deserialize_hash(bits);
-      return [bits, { ctor: "AskBlock", b_hash }];
-    }
-    case "1100": {
-      // let slices_: List<Slice>;
-      // [bits, slices_] = deserialize_list(deserialize_slice, bits);
-      // const slices = list_to_array(slices_);
-      let slice;
-      [bits, slice] = deserialize_slice(bits)
-      return [bits, { ctor: "PutSlice", slice }];
-    }
-  }
-  throw "bad message deserialization"; // TODO: handle error on bad serialization of messages
-}
-
 // Networking
 // ----------
 
-const DEFAULT_PORT: number = 16936;
-
-const valid_port = (port: number) => !isNaN(port) && port >= 1 && port <= 65535;
-const valid_octet = (octet: number) => !isNaN(octet) && octet >= 0 && octet <= 255;
-
-function address_to_deno(address: AddressPort): Deno.Addr {
-  return {
-    transport: "udp",
-    hostname: get_address_hostname(address),
-    port: address.port,
-  };
-}
-
-function deno_to_address(deno_addr: Deno.Addr): AddressPort {
-  if (deno_addr.transport === "udp") {
-    return string_to_address(`${deno_addr.hostname}:${deno_addr.port}`);
-  } else {
-    throw new Error(`Invalid UDP address: ${deno_addr}`);
-  }
-}
-
-// TODO: use parser from lib
-function string_to_address(address_txt: string): AddressPort {
-  const addr_split = address_txt.split(":");
-  const port_txt = addr_split[addr_split.length - 1];
-  const ip_txt = addr_split.slice(0, -1).join(":");
-
-  const port_ = default_or_convert(Number, valid_port)(DEFAULT_PORT)(port_txt);
-  if (port_ === null) {
-    throw new Error(`invalid port: '${port_txt}'`);
-  }
-  const port = u16.check(port_).unwrap();
-
-  if (ip_txt[0] == "[") {
-    // IPv6 address
-    // TODO: dual (ipv4) format
-    const txt = ip_txt.slice(1, -1);
-    const segments_txt = txt.split(":");
-
-    const is_empty = (x: string): boolean => !x;
-    let [prefix_txt, suffix_txt] = break_list(is_empty)(segments_txt);
-    prefix_txt = drop_while(is_empty)(prefix_txt);
-    suffix_txt = drop_while(is_empty)(suffix_txt);
-
-    const prefix_segments = prefix_txt.map((x) => parseInt(x, 16));
-    const suffix_segments = suffix_txt.map((x) => parseInt(x, 16));
-    const len = prefix_segments.length + suffix_segments.length;
-    const fill: number[] = Array(8 - len).fill(0);
-    const segments_ = prefix_segments.concat(fill).concat(suffix_segments);
-    const segments = segments_.map(u16.mask) as Octuple<U16>;
-
-    return {
-      _: "IPv6",
-      segments,
-      port,
-    };
-  } else {
-    const [val0_txt, val1_txt, val2_txt, val3_txt] = ip_txt.split(".");
-    const val0 = Number(val0_txt);
-    const val1 = Number(val1_txt);
-    const val2 = Number(val2_txt);
-    const val3 = Number(val3_txt);
-    if ([val0, val1, val2, val3].some((x) => !valid_octet(x))) {
-      throw new Error(`invalid address: ${ip_txt}`);
-    }
-    const octets = [val0, val1, val2, val3]
-      .map(Number)
-      .map(u8.mask) as Quadruple<U8>;
-    return {
-      _: "IPv4",
-      octets,
-      port,
-    };
-  }
-}
+// TODO: move to constants
 
 function udp_init(port: number = DEFAULT_PORT) {
   //console.log("init", port);
@@ -855,13 +456,13 @@ function udp_init(port: number = DEFAULT_PORT) {
 
 function udp_send(
   udp: Deno.DatagramConn,
-  address: AddressPort,
+  addr: AddressPort,
   message: Message,
 ) {
   //console.log("send", address, message);
   udp.send(
     bits_to_uint8array(serialize_message(message)),
-    address_to_deno(address),
+    address.to_deno(addr),
   );
 }
 
@@ -872,7 +473,7 @@ function udp_receive<T>(
   setTimeout(async () => {
     for await (const [buff, deno_addr] of udp) {
       let bits = uint8array_to_bits(buff);
-      const addr = deno_to_address(deno_addr);
+      const addr = address.from_deno(deno_addr, DEFAULT_PORT);
       let msg;
       [bits, msg] = deserialize_message(bits);
       callback(addr, msg);
@@ -890,7 +491,7 @@ export function start_node(
     display?: boolean;
     mine: boolean;
     secret_key?: U256;
-    peers?: cfg_nt.AddressOptPort[];
+    peers?: AddressOptPort[];
   },
 ) {
   const get_dir = get_dir_with_base(base_dir);
@@ -902,7 +503,7 @@ export function start_node(
       display: false,
       mine: false,
       secret_key: u256.zero,
-      peers: [] as cfg_nt.AddressOptPort[],
+      peers: [] as AddressOptPort[],
     },
     config,
   );
@@ -923,15 +524,15 @@ export function start_node(
   // Initializes the node
 
   const chain: Chain = initial_chain();
-  // var slices : Heap<Slice> = {ctor: "Empty"};
   const node: Node = {
     port: cfg.port,
     peers: initial_peers,
-    chain,
-    pool: { ctor: "Empty" },
+    chain: chain,
+    pool: heap.empty,
   };
+  // const mined_slices: HashMap<ImmSet<Hash>> = new Map();
 
-  const body: Body = EmptyBody;
+  const body: BlockBody = EMPTY_BODY;
   body[0] = (cfg.port >> 8) % 0xff; // DEBUG
   body[1] = cfg.port % 0xff; // DEBUG
 
@@ -975,41 +576,37 @@ export function start_node(
         //   "<- received PutBlock".padEnd(30, " "),
         //   hash_block(message.block),
         // ); // DEBUG
-        add_block(node.chain, message.block, get_time());
+        handle_block(node.chain, message.block, get_time());
         return;
       }
       case "AskBlock": {
         // console.log("<- received AskBlock".padEnd(30, " "), message.b_hash); // DEBUG
         const block = node.chain.block.get(message.b_hash);
         if (block) {
-          // console.log(
-          //    `  -> sending asked block:`.padEnd(30, " "),
-          //   `${message.b_hash}`,
-          // ); // DEBUG
+          // console.log(`  -> sending asked block:`.padEnd(30, " "), `${message.b_hash}`); // DEBUG
           send(sender, { ctor: "PutBlock", block });
           // Gets some children to send too
-          //for (var i = 0; i < 8; ++i) {
-          //var block = node.chain.block[block.prev];
-          //if (block) {
-          //send(sender, {ctor: "PutBlock", block});
-          //}
-          //}
+          // for (var i = 0; i < 8; ++i) {
+          //  var block = node.chain.block[block.prev];
+          //  if (block) {
+          //    send(sender, {ctor: "PutBlock", block});
+          //  }
+          // }
         } else {
-          // console.log(
-          //   `  XX block not found:`.padEnd(30, " "),
-          //   `${message.b_hash}`,
-          // ); // DEBUG
+          // console.log(`  XX block not found:`.padEnd(30, " "), `${message.b_hash}`); // DEBUG
         }
         return;
       }
       case "PutSlice": {
         console.log("<- received PutSlice".padEnd(30, " ")); // DEBUG
-        // const work = get_hash_work(hash_slice(message.slice));
-        // node.slices = heap_insert([work, message.slice], node.slices);
+        const slice = message.slice;
+        // TODO: this is re-serializing received slices
+        // pass raw slice?
+        const score = DEFAULT_SCORE(slice);
+        node.pool = heap.insert([score, slice], node.pool);
         return;
       }
     }
-    throw `bad message`;
   }
 
   function write_block(block: Block, rand: U64) {
@@ -1028,7 +625,7 @@ export function start_node(
     // const max_hashes = MINER_HASHRATE / MINER_CPS;
     const max_hashes = 16;
     const mined = mine(
-      { ...BlockZero, body, prev: tip_hash },
+      { ...BLOCK_ZERO, body, prev: tip_hash },
       tip_target,
       max_hashes,
       get_time(),
@@ -1039,7 +636,7 @@ export function start_node(
       console.log("=> block MINED".padEnd(30, " "));
       const [new_block, rand] = mined;
       MINED += 1;
-      add_block(node.chain, new_block, get_time());
+      handle_block(node.chain, new_block, get_time());
       write_block(new_block, rand);
     }
     // Let other jobs run and loop
@@ -1088,7 +685,7 @@ export function start_node(
     for (const file of files) {
       const buff = Deno.readFileSync(b_dir + "/" + file.name);
       const [_bits, block] = deserialize_block(uint8array_to_bits(buff));
-      add_block(node.chain, block, get_time());
+      handle_block(node.chain, block, get_time());
     }
   }
 
@@ -1178,7 +775,7 @@ export function start_node(
 //  const do_mine = (prev: Hash) =>
 //    mine({ ...BlockZero, prev }, target, max_attempts, BigInt(Date.now())) ??
 //    BlockZero;
-//  const block_0 = do_mine(HashZero);
+//  const block_0 = do_mine(hash.zero);
 //  const block_1 = do_mine(hash_block(block_0));
 //  const block_2 = do_mine(hash_block(block_1));
 //
@@ -1205,33 +802,3 @@ export function start_node(
 //   show_usage();
 //   Deno.exit(1);
 // }
-
-export function main(args: string[], get_env: GetEnv): void {
-  const parsed_flags = parse_args(args, {
-    string: ["port"],
-    boolean: ["display"],
-  });
-
-  // TODO: fix ENV("HOME") ?? ""
-  const base_dir = get_env("UBILOG_DIR") ?? path.join(get_env("HOME") ?? "", ".ubilog");
-  const config_file_data = load_config_file(base_dir);
-  if (!is_json_object(config_file_data)) {
-    throw new Error(`invalid config file, content is not a JSON object`);
-  }
-
-  const config = resolve_config(parsed_flags, config_file_data, get_env);
-
-  // TODO: redundancy. pass entire config object
-  // (needs fixed size numbers on config)
-  start_node(base_dir, {
-    port: config.net_port,
-    display: config.display,
-    mine: config.mine,
-    // secret_key: config.secret_key,
-    peers: config.peers,
-  });
-}
-
-if (import.meta.main) {
-  main(Deno.args, Deno.env.get);
-}

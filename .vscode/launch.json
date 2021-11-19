@@ -9,7 +9,7 @@
       "name": "ubilog",
       "args": ["--display", "--port", "42001"],
       "type": "pwa-node",
-      "program": "${workspaceFolder}/typescript/src/ubilog.ts",
+      "program": "${workspaceFolder}/typescript/src/cli.ts",
       "cwd": "${workspaceFolder}/typescript",
       "runtimeExecutable": "deno",
       "runtimeArgs": [
@@ -27,7 +27,7 @@
       "name": "ubilog MINER",
       "args": ["--display", "--port", "42001", "--mine"],
       "type": "pwa-node",
-      "program": "${workspaceFolder}/typescript/src/ubilog.ts",
+      "program": "${workspaceFolder}/typescript/src/cli.ts",
       "cwd": "${workspaceFolder}/typescript",
       "runtimeExecutable": "deno",
       "runtimeArgs": [
