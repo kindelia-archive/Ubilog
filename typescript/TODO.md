@@ -26,3 +26,4 @@
 
 - document lib/
 - metrics endpoint?
+- fix `keccak256.ts` type annotations

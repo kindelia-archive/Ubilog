@@ -1,16 +1,17 @@
 {
-    "deno.enable": true,
-    "deno.lint": true,
-    "deno.unstable": true,
-    "deno.config": "typescript/deno.json",
-    "cSpell.words": [
-        "confignator",
-        "deno",
-        "displayer",
-        "hashrate",
-        "JSONL",
-        "Kindelia",
-        "Kleisli",
-        "Ubilog"
-    ]
+  "deno.enable": true,
+  "deno.lint": true,
+  "deno.unstable": true,
+  "deno.config": "typescript/deno.json",
+  "cSpell.words": [
+    "confignator",
+    "deno",
+    "displayer",
+    "hashrate",
+    "JSONL",
+    "Kindelia",
+    "Kleisli",
+    "Ubilog"
+  ],
+  "editor.tabSize": 2
 }

@@ -1,6 +1,6 @@
-import type { Tag } from "./base.ts";
-import type Maybe from "../../lib/functional/maybe.ts";
-import * as M from "../../lib/functional/maybe.ts";
+import type { Tag } from "../tag_type.ts";
+import type Maybe from "../functional/maybe.ts";
+import * as M from "../functional/maybe.ts";
 
 export type Nat = bigint & Tag<"Nat">;
 

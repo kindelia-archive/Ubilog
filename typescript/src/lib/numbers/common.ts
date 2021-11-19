@@ -1,4 +1,4 @@
-import Maybe, * as M from "../../lib/functional/maybe.ts";
+import Maybe, * as M from "../functional/maybe.ts";
 
 export const check_uint_number = <T extends number>(size: number) =>
   (value: number): Maybe<T> => {

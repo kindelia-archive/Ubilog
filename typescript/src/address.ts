@@ -3,7 +3,9 @@ import type { Octuple, Quadruple } from "./lib/tuple.ts";
 import type { U16, U8 } from "./lib/numbers/mod.ts";
 import { u16, u8 } from "./lib/numbers/mod.ts";
 
-import type { AddressPort } from "./types/address.ts";
+import type { AddressPort } from "./types/networking.ts";
+
+// TODO: move to lib/
 
 export const valid_port = (port: number) => !isNaN(port) && port >= 1 && port <= 65535;
 export const valid_octet = (octet: number) => !isNaN(octet) && octet >= 0 && octet <= 255;

@@ -1,4 +1,4 @@
-import type { Tag } from "./base.ts";
+import type { Tag } from "../lib/tag_type.ts";
 import type Maybe from "../lib/functional/maybe.ts";
 import * as M from "../lib/functional/maybe.ts";
 

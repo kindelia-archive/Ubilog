@@ -1,5 +1,7 @@
-import type { AddressPort } from "./address.ts";
+import type { AddressPort } from "../lib/address.ts";
 import type { Block, Hash, Slice } from "./blockchain.ts";
+
+export type { Address, AddressPort } from "../lib/address.ts";
 
 type Nat = bigint;
 

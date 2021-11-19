@@ -2,20 +2,19 @@
 
 // import { Set as ImmSet } from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 
-import { get_dir_with_base } from "./lib/files.ts";
 import type { U256, U64 } from "./lib/numbers/mod.ts";
-import { u16, u256, u64, bits_mask } from "./lib/numbers/mod.ts";
-
-import { AddressPort, Bits } from "./types/mod.ts";
-import * as bits from "./types/bits.ts";
-
-import type { Heap } from "./heap.ts";
-import * as heap from "./heap.ts";
+import { bits_mask, u16, u256, u64 } from "./lib/numbers/mod.ts";
+import type { Heap } from "./lib/heap.ts";
+import * as heap from "./lib/heap.ts";
+import type { BitStr } from "./lib/bit_str.ts";
+import * as bit_str from "./lib/bit_str.ts";
+import { get_dir_with_base } from "./lib/files.ts";
+import type { AddressOptPort } from "./lib/address.ts";
 
 import type { Hash, HashMap } from "./types/hash.ts";
 import * as hash from "./types/hash.ts";
 import type { Block, BlockBody, Chain, Slice } from "./types/blockchain.ts";
-import type { Message, Peer } from "./types/network.ts";
+import type { AddressPort, Message, Peer } from "./types/networking.ts";
 
 import {
   deserialize_block,
@@ -30,8 +29,6 @@ import {
 import * as address from "./address.ts";
 import { keccak256 } from "./keccak256.ts";
 import { pad_left } from "./util.ts";
-
-import type { AddressOptPort } from "./config.ts"; // TODO: remove
 
 // Configuration:
 // ~/.ubilog/config
@@ -117,7 +114,7 @@ function next_power_of_two(x: number): number {
 // Bits
 // ----
 
-function bits_to_uint8array(bits: Bits): Uint8Array {
+function bits_to_uint8array(bits: BitStr): Uint8Array {
   if (bits.length < 2 ** 16) {
     const buff = new Uint8Array(2 + Math.ceil(bits.length / 8));
     bits = serialize_bits(bits);
@@ -136,14 +133,14 @@ function bits_to_uint8array(bits: Bits): Uint8Array {
   throw "bit string too large";
 }
 
-function uint8array_to_bits(buff: Uint8Array): Bits {
+function uint8array_to_bits(buff: Uint8Array): BitStr {
   const size = (buff[0] ?? 0) + (buff[1] ?? 0) * 256;
-  let result = bits.empty;
+  let result = bit_str.empty;
   for (let i = 2; i < buff.length; ++i) {
     const val = buff[i] ?? 0;
     for (let j = 0; j < 8 && result.length < size; ++j) {
       const bit = (val >>> j) & 1 ? "1" : "0";
-      result = bits.push(bit)(result);
+      result = bit_str.push(bit)(result);
     }
   }
   return result;
@@ -247,25 +244,23 @@ function mine(
 // ------
 
 // Fills a body with the top slices on the slice-pool
-//function fill_body(body: Body, slices: Heap<string>) {
-//for (var i = 0; i < BODY_SIZE; ++i) {
-//body[i] = 0;
-//}
-//var i = 0
-//while (slices.ctor !== "Empty" && i < BODY_SIZE * 8) {
-//var bits : string = (heap_head(slices) ?? [0,""])[1]
-////console.log("got", bits);
-//for (var k = 0; k < bits.length && i < BODY_SIZE * 8; ++k, ++i) {
-////console.log("- bit_" + i + ": " + bits[k]);
-//if (bits[k] === "1") {
-//var x = Math.floor(i / 8)
-//var y = i % 8
-//body[x] = body[x] | (1 << (7 - y));
-//}
-//}
-//slices = heap_tail(slices);
-//}
-//}
+// function fill_body(body: Body, slices: Heap<string>) {
+//   for (var i = 0; i < BODY_SIZE; ++i) {
+//     body[i] = 0;
+//   }
+//   var i = 0;
+//   while (slices.ctor !== "Empty" && i < BODY_SIZE * 8) {
+//     var bits: string = (heap_head(slices) ?? [0, ""])[1];
+//     for (var k = 0; k < bits.length && i < BODY_SIZE * 8; ++k, ++i) {
+//       if (bits[k] === "1") {
+//         var x = Math.floor(i / 8);
+//         var y = i % 8;
+//         body[x] = body[x] | (1 << (7 - y));
+//       }
+//     }
+//     slices = heap_tail(slices);
+//   }
+// }
 
 // Chain
 // -----
@@ -484,33 +479,23 @@ function udp_receive<T>(
 // Node
 // ----
 
+const CONFIG_DEFAULTS = {
+  port: DEFAULT_PORT,
+  display: false,
+  mine: false,
+  secret_key: u256.zero,
+  peers: [] as AddressOptPort[],
+};
+
 export function start_node(
   base_dir: string,
-  config: {
-    port?: number;
-    display?: boolean;
-    mine: boolean;
-    secret_key?: U256;
-    peers?: AddressOptPort[];
-  },
+  config: Partial<typeof CONFIG_DEFAULTS>,
 ) {
   const get_dir = get_dir_with_base(base_dir);
-  // TODO: fix much redundancy on config params
-  const cfg = Object.assign(
-    {},
-    {
-      port: DEFAULT_PORT,
-      display: false,
-      mine: false,
-      secret_key: u256.zero,
-      peers: [] as AddressOptPort[],
-    },
-    config,
-  );
+  const cfg = Object.assign({}, CONFIG_DEFAULTS, config);
 
-  // TODO: i don't understand this  :P
   // const MINER_CPS = 16;
-  const MINER_HASHRATE = 64;
+  // const MINER_HASHRATE = 64;
 
   let MINED = 0;
 
@@ -724,7 +709,7 @@ export function start_node(
         " downloaded)",
     );
     console.log("- total_mined   : " + MINED + " blocks");
-    console.log("- own_hash_rate : " + MINER_HASHRATE + " hashes / second");
+    // console.log("- own_hash_rate : " + MINER_HASHRATE + " hashes / second");
     console.log("- net_hash_rate : " + rate + " hashes / second");
     console.log("- difficulty    : " + diff + " hashes / block");
     console.log(

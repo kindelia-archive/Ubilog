@@ -1,8 +1,7 @@
 import { JSONObject } from "../json.ts";
-
 import { Validator } from "./types.ts";
 
-export type { Address, AddressOptPort, AddressPort, GetEnv } from "./types.ts";
+export type { GetEnv } from "./types.ts";
 export * as V from "./validators/mod.ts";
 
 export type ConfigItem<T> = {

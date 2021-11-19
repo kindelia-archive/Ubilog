@@ -1,4 +1,4 @@
-import type { Tag } from "./base.ts";
+import type { Tag } from "../tag_type.ts";
 import { check_uint_number, mask_uint_number } from "./common.ts";
 
 export type U8 = number & Tag<"U8">;
