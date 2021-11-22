@@ -16,5 +16,5 @@
 
 ```
 cd ./typescript
-./run.sh
+./run-ubilog.sh
 ```
