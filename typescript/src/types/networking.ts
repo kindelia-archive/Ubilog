@@ -1,5 +1,5 @@
 import type { AddressPort } from "../lib/address.ts";
-import type { Block, Hash, Slice } from "./blockchain.ts";
+import type { Block, Hash, PowSlice } from "./blockchain.ts";
 
 export type { Address, AddressPort } from "../lib/address.ts";
 
@@ -13,7 +13,7 @@ export type Peer = {
 type PutPeers = { ctor: "PutPeers"; peers: AddressPort[] };
 type PutBlock = { ctor: "PutBlock"; block: Block };
 type AskBlock = { ctor: "AskBlock"; b_hash: Hash };
-type PutSlice = { ctor: "PutSlice"; slice: Slice };
+type PutSlice = { ctor: "PutSlice"; slice: PowSlice };
 export type Message = PutPeers | PutBlock | AskBlock | PutSlice;
 
 // type Mail = {

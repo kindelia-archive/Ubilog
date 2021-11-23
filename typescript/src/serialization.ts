@@ -6,11 +6,11 @@ import * as list from "./lib/list.ts";
 
 import type { BitStr } from "./lib/bit_str.ts";
 import * as bit_str from "./lib/bit_str.ts";
-import type { Block, BlockBody, Hash, Slice } from "./types/blockchain.ts";
+import type { Block, BlockBody, Hash, PowSlice, Slice } from "./types/blockchain.ts";
 import type { AddressPort, Message } from "./types/networking.ts";
 import * as hash from "./types/hash.ts";
 
-import { BODY_SIZE } from "./constants.ts";
+// import { BODY_SIZE } from "./constants.ts";
 import { pad_left } from "./util.ts";
 
 type Nat = bigint;
@@ -77,6 +77,91 @@ export function deserialize_list<T>(
   }
 }
 
+export function serialize_hash(hash: Hash): BitStr {
+  return serialize_fixed_len(256, BigInt(HASH(hash)));
+}
+
+export function deserialize_hash(bits: BitStr): [BitStr, Hash] {
+  let nat;
+  [bits, nat] = deserialize_fixed_len(256, bits);
+  return [bits, HASH("0x" + pad_left(64, "0", nat.toString(16)))];
+}
+
+export function serialize_bits(data: BitStr): BitStr {
+  const size = serialize_fixed_len(16, BigInt(data.length));
+  return bit_str.concat(size, data);
+}
+
+export function deserialize_bits(bits: BitStr): [BitStr, BitStr] {
+  let size_: bigint, data: BitStr;
+  [bits, size_] = deserialize_fixed_len(16, bits);
+  const size = Number(size_);
+  [bits, data] = [bit_str.slice(size)(bits), bit_str.slice(0, size)(bits)];
+  return [bits, data];
+}
+
+export function serialize_uint8array(bytes: number, array: Uint8Array): BitStr {
+  let bits = bit_str.empty;
+  for (let i = 0; i < bytes; ++i) {
+    const ser = serialize_fixed_len(8, BigInt(array[i]));
+    bits = bit_str.concat(bits, ser);
+  }
+  return bits;
+}
+
+export function deserialize_uint8array(bytes: number, bits: BitStr): [BitStr, Uint8Array] {
+  const vals = [];
+  for (let i = 0; i < bytes; ++i) {
+    let val: bigint;
+    [bits, val] = deserialize_fixed_len(8, bits);
+    vals.push(Number(val));
+  }
+  return [bits, new Uint8Array(vals)];
+}
+
+export function serialize_pow_slice(slice: PowSlice): BitStr {
+  const work = serialize_fixed_len(64, slice.work);
+  const data = serialize_bits(slice.data);
+  return bit_str.concat(work, data);
+}
+
+export function deserialize_pow_slice(bits: BitStr): [BitStr, PowSlice] {
+  let work_: bigint, data: BitStr;
+  [bits, work_] = deserialize_fixed_len(64, bits);
+  [bits, data] = deserialize_bits(bits);
+  const work = u64.mask(work_);
+  return [bits, { work, data }];
+}
+
+export function serialize_body(body: BlockBody) {
+  return serialize_list(serialize_bits, list.from_array(body));
+}
+
+export function deserialize_body(bits: BitStr): [BitStr, BlockBody] {
+  let slice_list: List<Slice>;
+  [bits, slice_list] = deserialize_list(deserialize_bits, bits);
+  const slice_arr = list.to_array(slice_list);
+  return [bits, slice_arr];
+}
+
+export function serialize_block(block: Block): BitStr {
+  const prev = serialize_hash(block.prev);
+  const time = serialize_fixed_len(256, block.time);
+  // const body = serialize_uint8array(BODY_SIZE, block.body);
+  const body = serialize_body(block.body);
+  return bit_str.concat(prev, time, body);
+}
+
+export function deserialize_block(bits: BitStr): [BitStr, Block] {
+  let prev, time, body;
+  [bits, prev] = deserialize_hash(bits);
+  [bits, time] = deserialize_fixed_len(256, bits);
+  // [bits, body] = deserialize_uint8array(BODY_SIZE, bits);
+  [bits, body] = deserialize_body(bits);
+  time = u256.mask(time);
+  return [bits, { prev, time, body }];
+}
+
 export function serialize_address(address: AddressPort): BitStr {
   switch (address._) {
     case "IPv4": {
@@ -119,78 +204,6 @@ export function deserialize_address(bits: BitStr): [BitStr, AddressPort] {
   }
 }
 
-export function serialize_bits(data: BitStr): BitStr {
-  const size = serialize_fixed_len(16, BigInt(data.length));
-  return bit_str.concat(size, data);
-}
-
-export function deserialize_bits(bits: BitStr): [BitStr, BitStr] {
-  let size_: bigint, data: BitStr;
-  [bits, size_] = deserialize_fixed_len(16, bits);
-  const size = Number(size_);
-  [bits, data] = [bit_str.slice(size)(bits), bit_str.slice(0, size)(bits)];
-  return [bits, data];
-}
-
-export function serialize_slice(slice: Slice): BitStr {
-  const work = serialize_fixed_len(64, slice.work);
-  const data = serialize_bits(slice.data);
-  return bit_str.concat(work, data);
-}
-
-export function deserialize_slice(bits: BitStr): [BitStr, Slice] {
-  let work_: bigint, data: BitStr;
-  [bits, work_] = deserialize_fixed_len(64, bits);
-  [bits, data] = deserialize_bits(bits);
-  const work = u64.mask(work_); // TODO: fix size mask redundancy, refactor `deserialize_fixed_len`;
-  return [bits, { work, data }];
-}
-
-export function serialize_uint8array(bytes: number, array: Uint8Array): BitStr {
-  let bits = bit_str.empty;
-  for (let i = 0; i < bytes; ++i) {
-    const ser = serialize_fixed_len(8, BigInt(array[i]));
-    bits = bit_str.concat(bits, ser);
-  }
-  return bits;
-}
-
-export function deserialize_uint8array(bytes: number, bits: BitStr): [BitStr, Uint8Array] {
-  const vals = [];
-  for (let i = 0; i < bytes; ++i) {
-    let val: bigint;
-    [bits, val] = deserialize_fixed_len(8, bits);
-    vals.push(Number(val));
-  }
-  return [bits, new Uint8Array(vals)];
-}
-
-export function serialize_hash(hash: Hash): BitStr {
-  return serialize_fixed_len(256, BigInt(HASH(hash)));
-}
-
-export function deserialize_hash(bits: BitStr): [BitStr, Hash] {
-  let nat;
-  [bits, nat] = deserialize_fixed_len(256, bits);
-  return [bits, HASH("0x" + pad_left(64, "0", nat.toString(16)))];
-}
-
-export function serialize_block(block: Block): BitStr {
-  const prev = serialize_hash(block.prev);
-  const time = serialize_fixed_len(256, block.time);
-  const body = serialize_uint8array(BODY_SIZE, block.body);
-  return bit_str.concat(prev, time, body);
-}
-
-export function deserialize_block(bits: BitStr): [BitStr, Block] {
-  let prev, time, body;
-  [bits, prev] = deserialize_hash(bits);
-  [bits, time] = deserialize_fixed_len(256, bits);
-  [bits, body] = deserialize_uint8array(BODY_SIZE, bits);
-  time = u256.mask(time);
-  return [bits, { prev, time, body: body as BlockBody }];
-}
-
 export function serialize_message(message: Message): BitStr {
   switch (message.ctor) {
     case "PutPeers": {
@@ -213,11 +226,7 @@ export function serialize_message(message: Message): BitStr {
     }
     case "PutSlice": {
       const code3 = bit_str.from("1100");
-      // const slices = serialize_list(
-      //   serialize_slice,
-      //   array_to_list(message.slices),
-      // );
-      const slice = serialize_slice(message.slice);
+      const slice = serialize_pow_slice(message.slice);
       return bit_str.concat(code3, slice);
     }
   }
@@ -248,7 +257,7 @@ export function deserialize_message(bits: BitStr): [BitStr, Message] {
       // [bits, slices_] = deserialize_list(deserialize_slice, bits);
       // const slices = list_to_array(slices_);
       let slice;
-      [bits, slice] = deserialize_slice(bits);
+      [bits, slice] = deserialize_pow_slice(bits);
       return [bits, { ctor: "PutSlice", slice }];
     }
   }

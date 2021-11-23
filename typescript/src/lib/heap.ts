@@ -43,7 +43,7 @@ function merge_pairs<A>(pairs: List<Heap<A>>): Heap<A> {
   }
 }
 
-export function insert<A>(value: [bigint, A], heap: Heap<A>): Heap<A> {
+export function insert<A>(heap: Heap<A>, value: [bigint, A]): Heap<A> {
   return merge({ ctor: "HNode", value: value, child: { ctor: "Nil" } }, heap);
 }
 

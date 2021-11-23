@@ -31,11 +31,15 @@ $ git checkout -b my-branch -t upstream/master
 
 ### TypeScript / Deno
 
-#### Run a node 
-
 You must have [Deno](https://deno.land) installed.
 
+```sh
+make cache
 ```
+
+#### Run a node 
+
+```sh
 cd ./typescript
 ./run-ubilog.sh --mine --display
 ```
@@ -44,7 +48,7 @@ cd ./typescript
 
 You must have [`dtach`](https://github.com/crigler/dtach) installed.
 
-```
+```sh
 cd ./typescript
 TODO
 ```

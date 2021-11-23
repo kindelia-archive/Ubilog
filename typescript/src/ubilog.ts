@@ -1,6 +1,6 @@
 // deno-lint-ignore-file camelcase
 
-// import { Set as ImmSet } from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
+import { ImmSet } from "./deps.ts";
 
 import type { U256, U64 } from "./lib/numbers/mod.ts";
 import { bits_mask, u16, u256, u64 } from "./lib/numbers/mod.ts";
@@ -13,7 +13,7 @@ import type { AddressOptPort } from "./lib/address.ts";
 
 import type { Hash, HashMap } from "./types/hash.ts";
 import * as hash from "./types/hash.ts";
-import type { Block, BlockBody, Chain, Slice } from "./types/blockchain.ts";
+import type { Block, BlockBody, Chain, PowSlice, Slice } from "./types/blockchain.ts";
 import type { AddressPort, Message, Peer } from "./types/networking.ts";
 
 import {
@@ -22,8 +22,10 @@ import {
   serialize_address,
   serialize_bits,
   serialize_block,
+  serialize_body,
+  serialize_fixed_len,
   serialize_message,
-  serialize_slice,
+  serialize_pow_slice,
 } from "./serialization.ts";
 
 import * as address from "./address.ts";
@@ -41,16 +43,18 @@ import { pad_left } from "./util.ts";
 
 import {
   BLOCKS_PER_PERIOD,
-  BODY_SIZE,
+  // BODY_SIZE,
   DEFAULT_PORT,
   DELAY_TOLERANCE,
   DIR_BLOCKS,
   DIR_MINED,
+  INITIAL_DIFFICULTY,
   TIME_PER_BLOCK,
   TIME_PER_PERIOD,
 } from "./constants.ts";
 
-export const EMPTY_BODY: BlockBody = new Uint8Array(BODY_SIZE) as BlockBody;
+// export const EMPTY_BODY: BlockBody = new Uint8Array(BODY_SIZE) as BlockBody;
+export const EMPTY_BODY: BlockBody = [];
 
 export const BLOCK_ZERO: Block = {
   prev: hash.zero,
@@ -58,7 +62,7 @@ export const BLOCK_ZERO: Block = {
   body: EMPTY_BODY,
 };
 
-const DEFAULT_SCORE = (slice: Slice) => get_hash_work(hash_slice(slice));
+const DEFAULT_SCORE = (slice: PowSlice) => get_hash_work(hash_pow_slice(slice));
 
 // Types
 // =====
@@ -74,7 +78,6 @@ type Node = {
   port: number; // TODO: U16
   peers: Dict<Peer>;
   chain: Chain;
-  pool: Heap<Slice>;
 };
 
 // Algorithms
@@ -115,25 +118,29 @@ function next_power_of_two(x: number): number {
 // ----
 
 function bits_to_uint8array(bits: BitStr): Uint8Array {
-  if (bits.length < 2 ** 16) {
-    const buff = new Uint8Array(2 + Math.ceil(bits.length / 8));
-    bits = serialize_bits(bits);
-    for (let i = 0; i < bits.length; i += 8) {
-      let numb = 0;
-      for (let j = 0; j < 8; ++j) {
-        numb *= 2;
-        if (bits[i + 8 - j - 1] === "1") {
-          numb += 1;
-        }
+  const buff = new Uint8Array(2 + Math.ceil(bits.length / 8));
+  for (let i = 0; i < bits.length; i += 8) {
+    let numb = 0;
+    for (let j = 0; j < 8; ++j) {
+      numb *= 2;
+      if (bits[i + 8 - j - 1] === "1") {
+        numb += 1;
       }
-      buff[Math.floor(i / 8)] = numb;
     }
-    return buff;
+    buff[Math.floor(i / 8)] = numb;
   }
-  throw "bit string too large";
+  return buff;
 }
 
-function uint8array_to_bits(buff: Uint8Array): BitStr {
+function serialize_bits_to_uint8array(bits: BitStr): Uint8Array {
+  if (bits.length >= 2 ** 16) {
+    throw `bit string is too large`;
+  }
+  bits = serialize_bits(bits);
+  return bits_to_uint8array(bits);
+}
+
+function deserialize_bits_to_uint8array(buff: Uint8Array): BitStr {
   const size = (buff[0] ?? 0) + (buff[1] ?? 0) * 256;
   let result = bit_str.empty;
   for (let i = 2; i < buff.length; ++i) {
@@ -159,6 +166,11 @@ function u256_to_uint8array(value: U256): Uint8Array {
 
 function hash_to_uint8array(hash: Hash): Uint8Array {
   return u256_to_uint8array(u256.mask(BigInt(hash)));
+}
+
+function body_to_uint8array(body: BlockBody): Uint8Array {
+  const bits = serialize_body(body);
+  return bits_to_uint8array(bits);
 }
 
 function compute_difficulty(target: Nat): Nat {
@@ -201,14 +213,18 @@ function hash_block(block: Block): Hash {
       new Uint8Array([
         ...hash_to_uint8array(block.prev),
         ...u256_to_uint8array(block.time),
-        ...block.body,
+        ...body_to_uint8array(block.body),
       ]),
     );
   }
 }
 
 function hash_slice(slice: Slice): Hash {
-  return hash_uint8array(bits_to_uint8array(serialize_slice(slice)));
+  return hash_uint8array(bits_to_uint8array(slice));
+}
+
+function hash_pow_slice(pow_slice: PowSlice): Hash {
+  return hash_uint8array(bits_to_uint8array(serialize_pow_slice(pow_slice)));
 }
 
 // Attempts to mine a block by changing the least significant 192 bits of its
@@ -266,7 +282,7 @@ function mine(
 // -----
 
 // initial target of 256 hashes per block
-const INITIAL_TARGET: Nat = compute_target(256n);
+const INITIAL_TARGET: Nat = compute_target(INITIAL_DIFFICULTY);
 
 function initial_chain(): Chain {
   const block: HashMap<Block> = new Map([[hash.zero, BLOCK_ZERO]]);
@@ -275,94 +291,10 @@ function initial_chain(): Chain {
   const work: HashMap<U64> = new Map([[hash.zero, u64.zero]]);
   const height: HashMap<Nat> = new Map([[hash.zero, 0n]]);
   const target: HashMap<Nat> = new Map([[hash.zero, INITIAL_TARGET]]);
+  const mined_slices: HashMap<ImmSet<Slice>> = new Map([[hash.zero, ImmSet()]]);
   const seen: HashMap<true> = new Map();
   const tip: [U64, Hash] = [u64.zero, hash.zero];
-  return { block, children, pending, work, height, target, seen, tip };
-}
-
-function add_block(chain: Chain, block: Block): Block[] {
-  const b_hash = hash_block(block);
-  if (chain.block.get(b_hash) !== undefined) {
-    // Block is already present in the database
-    return [];
-  }
-
-  let pending: Block[] = [];
-  const p_hash = block.prev;
-  // If previous block is not available
-  if (chain.block.get(p_hash) === undefined) {
-    // And this block was not been seen before
-    if (chain.seen.get(b_hash) === undefined) {
-      // Add this block to the previous block's pending list
-      console.log(" ^^ pending block".padEnd(30, " "), b_hash); // DEBUG
-      chain.pending.set(p_hash, chain.pending.get(p_hash) ?? []);
-      get_assert(chain.pending, p_hash).push(block);
-    }
-  } // If previous block is available, add the block
-  else {
-    console.log("  ++ adding block".padEnd(30, " "), b_hash); // DEBUG
-    const work = get_hash_work(b_hash);
-    // TODO: ??
-    chain.block.set(b_hash, block);
-    chain.work.set(b_hash, 0n);
-    chain.height.set(b_hash, 0n);
-    chain.target.set(b_hash, 0n);
-    chain.children.set(b_hash, []);
-    const p_block = get_assert(chain.block, p_hash);
-    const p_target = get_assert(chain.target, p_hash);
-    const has_enough_work = BigInt(b_hash) >= p_target;
-    const b_time = block.time >> 192n;
-    const p_time = p_block.time >> 192n;
-    const advances_time = b_time > p_time;
-    // If the block is valid
-    if (has_enough_work && advances_time) {
-      const p_work = get_assert(chain.work, p_hash);
-      chain.work.set(b_hash, p_work + work);
-      if (p_hash !== hash.zero) {
-        const p_height = get_assert(chain.height, p_hash);
-        chain.height.set(b_hash, p_height + 1n);
-      }
-      if (
-        get_assert(chain.height, b_hash) > 0n &&
-        get_assert(chain.height, b_hash) % BLOCKS_PER_PERIOD === 0n
-      ) {
-        // Update difficulty
-        let checkpoint_hash = p_hash;
-        for (let i = 0n; i < BLOCKS_PER_PERIOD - 1n; ++i) {
-          checkpoint_hash = get_assert(chain.block, checkpoint_hash).prev;
-        }
-        const period_time = Number(
-          b_time - (get_assert(chain.block, checkpoint_hash).time >> 192n),
-        );
-        const last_target = get_assert(chain.target, p_hash);
-        const scale = BigInt(
-          Math.floor((2 ** 32 * Number(TIME_PER_PERIOD)) / period_time),
-        );
-        const next_target = compute_next_target(last_target, scale);
-        chain.target.set(b_hash, next_target);
-        // console.log();
-        // console.log("[DIFF] A period should last   " + TIME_PER_PERIOD + " seconds.");
-        // console.log("[DIFF] the last period lasted " + period_time + " seconds.");
-        // console.log("[DIFF] the last difficulty was " + compute_difficulty(last_target) + " hashes per block.");
-        // console.log("[DIFF] the next difficulty is  " + compute_difficulty(next_target) + " hashes per block.");
-        // console.log();
-      } else {
-        // Keep old difficulty
-        chain.target.set(b_hash, get_assert(chain.target, p_hash));
-      }
-      // Refresh tip
-      if (get_assert(chain.work, b_hash) > chain.tip[0]) {
-        chain.tip = [u64.mask(get_assert(chain.work, b_hash)), b_hash];
-      }
-    }
-    // Registers this block as a child
-    get_assert(chain.children, p_hash).push(b_hash);
-    // Returns all blocks that were waiting for this block
-    pending = chain.pending.get(b_hash) ?? [];
-    chain.pending.delete(b_hash);
-  }
-  chain.seen.set(b_hash, true);
-  return pending;
+  return { block, children, pending, work, height, target, seen, tip, mined_slices };
 }
 
 function handle_block(chain: Chain, block: Block, time: U64) {
@@ -379,6 +311,97 @@ function handle_block(chain: Chain, block: Block, time: U64) {
       }
     }
   }
+}
+
+function add_block(chain: Chain, block: Block): Block[] {
+  const b_hash = hash_block(block);
+  if (chain.block.get(b_hash) !== undefined) {
+    // Block is already present in the database
+    return [];
+  }
+
+  let pending: Block[] = [];
+  const prev_hash = block.prev;
+  // If previous block is not available
+  if (chain.block.get(prev_hash) === undefined) {
+    // And this block was not been seen before
+    if (chain.seen.get(b_hash) === undefined) {
+      // Add this block to the previous block's pending list
+      console.log(" ^^ pending block".padEnd(30, " "), b_hash); // DEBUG
+      chain.pending.set(prev_hash, chain.pending.get(prev_hash) ?? []);
+      get_assert(chain.pending, prev_hash).push(block);
+    }
+  } // If previous block is available, add the block
+  else {
+    console.log("  ++ adding block".padEnd(30, " "), b_hash); // DEBUG
+    // TODO: ??
+    chain.block.set(b_hash, block);
+    chain.work.set(b_hash, 0n);
+    chain.height.set(b_hash, 0n);
+    chain.target.set(b_hash, 0n);
+    chain.children.set(b_hash, []);
+    const prev_mined_slices = get_assert(chain.mined_slices, prev_hash);
+    const b_mined_slices = prev_mined_slices.withMutations((s) => {
+      for (const slice of block.body) {
+        s.add(slice);
+      }
+    });
+    chain.mined_slices.set(b_hash, b_mined_slices);
+
+    const prev_block = get_assert(chain.block, prev_hash);
+    const prev_target = get_assert(chain.target, prev_hash);
+    const has_enough_work = BigInt(b_hash) >= prev_target;
+    const b_time = block.time >> 192n;
+    const prev_time = prev_block.time >> 192n;
+    const advances_time = b_time > prev_time;
+    // If the block is valid
+    if (has_enough_work && advances_time) {
+      const prev_work = get_assert(chain.work, prev_hash);
+      const work = get_hash_work(b_hash);
+      chain.work.set(b_hash, prev_work + work);
+      if (prev_hash !== hash.zero) {
+        const prev_height = get_assert(chain.height, prev_hash);
+        chain.height.set(b_hash, prev_height + 1n);
+      }
+      const b_height = get_assert(chain.height, b_hash);
+      if (!(b_height > 0n && b_height % BLOCKS_PER_PERIOD === 0n)) {
+        // Keep old difficulty
+        chain.target.set(b_hash, get_assert(chain.target, prev_hash));
+      } else {
+        // Update difficulty
+        let checkpoint_hash = prev_hash;
+        for (let i = 0n; i < BLOCKS_PER_PERIOD - 1n; ++i) {
+          checkpoint_hash = get_assert(chain.block, checkpoint_hash).prev;
+        }
+        const period_time = Number(
+          b_time - (get_assert(chain.block, checkpoint_hash).time >> 192n),
+        );
+        const last_target = get_assert(chain.target, prev_hash);
+        const scale = BigInt(
+          Math.floor((2 ** 32 * Number(TIME_PER_PERIOD)) / period_time),
+        );
+        const next_target = compute_next_target(last_target, scale);
+        chain.target.set(b_hash, next_target);
+        // console.log();
+        // console.log("[DIFF] A period should last   " + TIME_PER_PERIOD + " seconds.");
+        // console.log("[DIFF] the last period lasted " + period_time + " seconds.");
+        // console.log("[DIFF] the last difficulty was " + compute_difficulty(last_target) + " hashes per block.");
+        // console.log("[DIFF] the next difficulty is  " + compute_difficulty(next_target) + " hashes per block.");
+        // console.log();
+      }
+      // Refresh tip
+      if (get_assert(chain.work, b_hash) > chain.tip[0]) {
+        chain.tip = [u64.mask(get_assert(chain.work, b_hash)), b_hash];
+      }
+    }
+    // Registers this block as a child
+    get_assert(chain.children, prev_hash).push(b_hash);
+    // Returns all blocks that were waiting for this block
+    pending = chain.pending.get(b_hash) ?? [];
+    chain.pending.delete(b_hash);
+  }
+  chain.seen.set(b_hash, true);
+  return pending;
 }
 
 function get_longest_chain(chain: Chain): Array<Block> {
@@ -403,12 +426,13 @@ function show_block(chain: Chain, block: Block, index: number) {
   const work = chain.work.get(b_hash) ?? 0n;
   const show_index = BigInt(index).toString();
   const show_time = (block.time >> 192n).toString(10);
-  const show_body = [].slice
-    .call(block.body, 0, 32)
-    .map((x: number) => pad_left(2, "0", x.toString(16)))
-    .join("");
+  // const show_body = [].slice
+  //   .call(block.body, 0, 32)
+  //   .map((x: number) => pad_left(2, "0", x.toString(16)))
+  //   .join("");
   const show_hash = b_hash;
   const show_work = work.toString();
+  const show_body = block.body.join(", ")
   return (
     "" +
     pad_left(8, " ", show_index) +
@@ -417,9 +441,12 @@ function show_block(chain: Chain, block: Block, index: number) {
     " | " +
     pad_left(64, "0", show_hash) +
     " | " +
-    pad_left(64, "0", show_body) +
+    pad_left(16, "0", show_work) +
     " | " +
-    pad_left(16, "0", show_work)
+    // pad_left(64, " ", show_body) +
+    show_body +
+    " | " +
+    ""
   );
 }
 
@@ -456,7 +483,7 @@ function udp_send(
 ) {
   //console.log("send", address, message);
   udp.send(
-    bits_to_uint8array(serialize_message(message)),
+    serialize_bits_to_uint8array(serialize_message(message)),
     address.to_deno(addr),
   );
 }
@@ -467,7 +494,7 @@ function udp_receive<T>(
 ) {
   setTimeout(async () => {
     for await (const [buff, deno_addr] of udp) {
-      let bits = uint8array_to_bits(buff);
+      let bits = deserialize_bits_to_uint8array(buff);
       const addr = address.from_deno(deno_addr, DEFAULT_PORT);
       let msg;
       [bits, msg] = deserialize_message(bits);
@@ -513,13 +540,18 @@ export function start_node(
     port: cfg.port,
     peers: initial_peers,
     chain: chain,
-    pool: heap.empty,
+    // pool: heap.empty,
   };
-  // const mined_slices: HashMap<ImmSet<Hash>> = new Map();
+
+  const slices: HashMap<Slice> = new Map();
+  let slices_pool: Heap<Slice>;
 
   const body: BlockBody = EMPTY_BODY;
-  body[0] = (cfg.port >> 8) % 0xff; // DEBUG
-  body[1] = cfg.port % 0xff; // DEBUG
+  // body[0] = (cfg.port >> 8) % 0xff; // DEBUG
+  // body[1] = cfg.port % 0xff; // DEBUG
+  body.push(
+    serialize_fixed_len(16, BigInt(cfg.port)),
+  );
 
   // Initializes sockets
   const udp = udp_init(cfg.port);
@@ -531,13 +563,19 @@ export function start_node(
   }
 
   function send(to: AddressPort, message: Message) {
-    // if (!(get_address_hostname(to) === "127.0.0.1" && to.port === port)) {
     udp_send(udp, to, message);
-    // }
   }
 
   function all_peers(): Array<Peer> {
-    return Object.values(node.peers).filter((p) => p.address.port !== cfg.port); //! DEBUG
+    return Object.values(node.peers);
+  }
+
+  function handle_slice(pow_slice: PowSlice) {
+    const score = DEFAULT_SCORE(pow_slice);
+    const slice = pow_slice.data;
+    const hash = hash_slice(slice);
+    slices.set(hash, slice);
+    slices_pool = heap.insert(slices_pool, [score, pow_slice.data]);
   }
 
   // Handles incoming messages
@@ -584,11 +622,7 @@ export function start_node(
       }
       case "PutSlice": {
         console.log("<- received PutSlice".padEnd(30, " ")); // DEBUG
-        const slice = message.slice;
-        // TODO: this is re-serializing received slices
-        // pass raw slice?
-        const score = DEFAULT_SCORE(slice);
-        node.pool = heap.insert([score, slice], node.pool);
+        handle_slice(message.slice);
         return;
       }
     }
@@ -656,7 +690,7 @@ export function start_node(
     const chain = get_longest_chain(node.chain);
     for (let i = 0; i < chain.length; ++i) {
       const bits = serialize_block(chain[i]);
-      const buff = bits_to_uint8array(bits);
+      const buff = serialize_bits_to_uint8array(bits);
       const indx = pad_left(16, "0", i.toString(16));
       const b_dir = get_dir(DIR_BLOCKS);
       Deno.writeFileSync(b_dir + "/" + indx, buff);
@@ -669,7 +703,7 @@ export function start_node(
     const files = Array.from(Deno.readDirSync(b_dir)).sort((x, y) => x.name > y.name ? 1 : -1);
     for (const file of files) {
       const buff = Deno.readFileSync(b_dir + "/" + file.name);
-      const [_bits, block] = deserialize_block(uint8array_to_bits(buff));
+      const [_bits, block] = deserialize_block(deserialize_bits_to_uint8array(buff));
       handle_block(node.chain, block, get_time());
     }
   }
