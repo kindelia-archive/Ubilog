@@ -1,9 +1,7 @@
 # TODO
 
 - mined slices tracking
-- block assembly
-
-- CLI client
+- re-implement immutable set
 
 - Deno executable
 
@@ -22,8 +20,9 @@
 - implement IPv6
   - investigate why Deno isn't accepting IPv6 addresses
 
+- document
+
 ---
 
-- document lib/
 - metrics endpoint?
 - fix `keccak256.ts` type annotations

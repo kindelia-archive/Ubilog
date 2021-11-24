@@ -4,11 +4,12 @@ QT_PEERS=${1:-2}
 QT_DEPLOY=${2:-QT_PEERS}
 shift 2
 
-echo $QT_PEERS $QT_DEPLOY
+echo "$QT_PEERS" "$QT_DEPLOY"
 
 BASE_DIR="$(dirname "${BASH_SOURCE[0]}")"
 
-DATA_DIR="${BASE_DIR}/data"
+# DATA_DIR="${BASE_DIR}/data"
+DATA_DIR="/tmp/ubilog-test-data/"
 DTACH_DIR="${BASE_DIR}/dtach"
 
 mkdir -p "${DATA_DIR}"

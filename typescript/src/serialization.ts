@@ -10,7 +10,6 @@ import type { Block, BlockBody, Hash, PowSlice, Slice } from "./types/blockchain
 import type { AddressPort, Message } from "./types/networking.ts";
 import * as hash from "./types/hash.ts";
 
-// import { BODY_SIZE } from "./constants.ts";
 import { pad_left } from "./util.ts";
 
 type Nat = bigint;
@@ -108,9 +107,8 @@ export function deserialize_list<T>(
     [bits, head] = item(bit_str.slice(1)(bits));
     [bits, tail] = deserialize_list(item, bits);
     return [bits, list.cons(head, tail)];
-  } else {
-    return [bit_str.empty, list.empty];
   }
+  return [bit_str.empty, list.empty];
 }
 
 export function serialize_hash(hash: Hash): BitStr {
@@ -118,9 +116,8 @@ export function serialize_hash(hash: Hash): BitStr {
 }
 
 export function deserialize_hash(bits: BitStr): [BitStr, Hash] {
-  let nat;
-  [bits, nat] = deserialize_fixed_len(256, bits);
-  return [bits, HASH("0x" + pad_left(64, "0", nat.toString(16)))];
+  const [rest, nat] = deserialize_fixed_len(256, bits);
+  return [rest, HASH("0x" + pad_left(64, "0", nat.toString(16)))];
 }
 
 export function serialize_bits(data: BitStr): BitStr {
@@ -183,7 +180,6 @@ export function deserialize_body(bits: BitStr): [BitStr, BlockBody] {
 export function serialize_block(block: Block): BitStr {
   const prev = serialize_hash(block.prev);
   const time = serialize_fixed_len(256, block.time);
-  // const body = serialize_uint8array(BODY_SIZE, block.body);
   const body = serialize_body(block.body);
   return bit_str.concat(prev, time, body);
 }
@@ -192,7 +188,6 @@ export function deserialize_block(bits: BitStr): [BitStr, Block] {
   let prev, time, body;
   [bits, prev] = deserialize_hash(bits);
   [bits, time] = deserialize_fixed_len(256, bits);
-  // [bits, body] = deserialize_uint8array(BODY_SIZE, bits);
   [bits, body] = deserialize_body(bits);
   time = u256.mask(time);
   return [bits, { prev, time, body }];
@@ -201,18 +196,16 @@ export function deserialize_block(bits: BitStr): [BitStr, Block] {
 export function serialize_address(address: AddressPort): BitStr {
   switch (address._) {
     case "IPv4": {
-      const bit0 = "0";
       const val0 = serialize_fixed_len(8, BigInt(address.octets[0]));
       const val1 = serialize_fixed_len(8, BigInt(address.octets[1]));
       const val2 = serialize_fixed_len(8, BigInt(address.octets[2]));
       const val3 = serialize_fixed_len(8, BigInt(address.octets[3]));
       const port = serialize_fixed_len(16, BigInt(address.port));
-      return bit_str.push_front(bit0)(
-        bit_str.concat(val0, val1, val2, val3, port),
-      );
+      return bit_str.push_front("0")(bit_str.concat(val0, val1, val2, val3, port));
+      // TODO: IPv6
     }
   }
-  throw new Error("FAILURE: unknown address type");
+  throw "FAILURE: unknown address type";
 }
 
 export function deserialize_address(bits: BitStr): [BitStr, AddressPort] {
@@ -224,30 +217,18 @@ export function deserialize_address(bits: BitStr): [BitStr, AddressPort] {
     [bits, val2] = deserialize_fixed_len(8, bits);
     [bits, val3] = deserialize_fixed_len(8, bits);
     [bits, port] = deserialize_fixed_len(16, bits);
-    const octets = [val0, val1, val2, val3]
-      .map(Number)
-      .map(u8.mask) as Quadruple<U8>;
-    return [
-      bits,
-      {
-        _: "IPv4",
-        octets,
-        port: u16.mask(Number(port)),
-      },
-    ];
-  } else {
-    throw "Bad address deserialization.";
-  }
+    const octets = [val0, val1, val2, val3].map(Number).map(u8.mask) as Quadruple<U8>;
+    return [bits, { _: "IPv4", octets, port: u16.mask(Number(port)) }];
+  } 
+  // TODO: handle error on bad serialization of messages?
+  throw "bad address deserialization";
 }
 
 export function serialize_message(message: Message): BitStr {
   switch (message.ctor) {
     case "PutPeers": {
       const code0 = bit_str.from("0000");
-      const peers = serialize_list(
-        serialize_address,
-        list.from_array(message.peers),
-      );
+      const peers = serialize_list(serialize_address, list.from_array(message.peers));
       return bit_str.concat(code0, peers);
     }
     case "PutBlock": {
@@ -274,28 +255,22 @@ export function deserialize_message(bits: BitStr): [BitStr, Message] {
   bits = bit_str.slice(CODE_SIZE)(bits);
   switch (code) {
     case "0000": {
-      let peers;
-      [bits, peers] = deserialize_list(deserialize_address, bits);
-      return [bits, { ctor: "PutPeers", peers: list.to_array(peers) }];
+      const [rest, peers] = deserialize_list(deserialize_address, bits);
+      return [rest, { ctor: "PutPeers", peers: list.to_array(peers) }];
     }
     case "1000": {
-      let block;
-      [bits, block] = deserialize_block(bits);
-      return [bits, { ctor: "PutBlock", block }];
+      const [rest, block] = deserialize_block(bits);
+      return [rest, { ctor: "PutBlock", block }];
     }
     case "0100": {
-      let b_hash;
-      [bits, b_hash] = deserialize_hash(bits);
-      return [bits, { ctor: "AskBlock", b_hash }];
+      const [rest, b_hash] = deserialize_hash(bits);
+      return [rest, { ctor: "AskBlock", b_hash }];
     }
     case "1100": {
-      // let slices_: List<Slice>;
-      // [bits, slices_] = deserialize_list(deserialize_slice, bits);
-      // const slices = list_to_array(slices_);
-      let slice;
-      [bits, slice] = deserialize_pow_slice(bits);
-      return [bits, { ctor: "PutSlice", slice }];
+      const [rest, slice] = deserialize_pow_slice(bits);
+      return [rest, { ctor: "PutSlice", slice }];
     }
   }
-  throw "bad message deserialization"; // TODO: handle error on bad serialization of messages
+  // TODO: handle error on bad serialization of messages?
+  throw "bad message deserialization";
 }

@@ -64,9 +64,3 @@ export function tail<A>(heap: Heap<A>): Heap<A> {
       return heap;
   }
 }
-
-// insert :: Ord a => a -> Heap a -> Heap a
-// insert x = merge (Heap x [])
-
-// deleteMin :: Ord a => Heap a -> Heap a
-// deleteMin (Heap x hs) = mergePairs hs

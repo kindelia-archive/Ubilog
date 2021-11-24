@@ -8,7 +8,7 @@ import type { AddressOptPort } from "./lib/address.ts";
 import type { ConfigSchema } from "./lib/confignator/mod.ts";
 import { config_resolver, V } from "./lib/confignator/mod.ts";
 
-import { CONFIG_FILE_NAME } from "./constants.ts"
+import { CONFIG_FILE_NAME } from "./constants.ts";
 
 export type { GetEnv } from "./lib/confignator/mod.ts";
 

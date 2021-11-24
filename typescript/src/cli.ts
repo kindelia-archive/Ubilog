@@ -1,5 +1,5 @@
-import * as path from "https://deno.land/std@0.110.0/path/mod.ts";
-import { parse as parse_args } from "https://deno.land/std@0.113.0/flags/mod.ts";
+import * as path from "https://deno.land/std@0.115.1/path/mod.ts";
+import { parse as parse_flags } from "https://deno.land/std@0.115.1/flags/mod.ts";
 
 import { is_json_object } from "./lib/json.ts";
 
@@ -7,7 +7,7 @@ import { GetEnv, load_config_file, resolve_config } from "./config.ts";
 import { start_node } from "./ubilog.ts";
 
 export function main(args: string[], get_env: GetEnv): void {
-  const parsed_flags = parse_args(args, {
+  const parsed_flags = parse_flags(args, {
     string: ["port"],
     boolean: ["display"],
   });

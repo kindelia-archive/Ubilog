@@ -1,11 +1,11 @@
-import * as u16 from "./lib/numbers/u16.ts";
-import * as u64 from "./lib/numbers/u64.ts";
-import { parse_address_port, AddressPort } from "./lib/address.ts";
-import type { PutSlice } from "./types/networking.ts";
+import * as u16 from "../lib/numbers/u16.ts";
+import * as u64 from "../lib/numbers/u64.ts";
+import { AddressPort, parse_address_port } from "../lib/address.ts";
+import type { PutSlice } from "../types/networking.ts";
 
-import * as net from "./networking.ts";
-import { deserialize_bits_from_uint8array } from "./serialization.ts";
-import { BODY_SIZE, DEFAULT_PORT } from "./constants.ts";
+import * as net from "../networking.ts";
+import { deserialize_bits_from_uint8array } from "../serialization.ts";
+import { BODY_SIZE, DEFAULT_PORT } from "../constants.ts";
 
 const rand_int = (max: number): number => Math.floor(Math.random() * max);
 
@@ -22,13 +22,13 @@ const addr_port_opt = addr_res.unwrap();
 const addr: AddressPort = {
   ...addr_port_opt,
   port: addr_port_opt.port ?? u16.check(DEFAULT_PORT).unwrap(),
-}
+};
 
 const port = rand_port();
 console.error(`using port: ${port}`);
 console.error(`sending to: ${addr_txt}`);
 
-// Handle bytes 
+// Handle bytes
 
 const buf = new Uint8Array(2 + BODY_SIZE);
 let bytes_size: number;
@@ -54,11 +54,11 @@ const bits = deserialize_bits_from_uint8array(buf);
 const pow_slice = {
   work: u64.mask(0n),
   data: bits,
-} 
+};
 
 const message: PutSlice = {
   ctor: "PutSlice",
-  slice: pow_slice, 
+  slice: pow_slice,
 };
 
 const udp = net.udp_init(port);

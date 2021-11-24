@@ -1,8 +1,5 @@
 type Nat = bigint;
 
-// Don't accept blocks from 1 hour in the future
-export const DELAY_TOLERANCE: Nat = 60n * 60n * 1000n;
-
 // Readjusts difficulty every 20 blocks
 export const BLOCKS_PER_PERIOD: Nat = 20n;
 
@@ -13,6 +10,9 @@ export const TIME_PER_BLOCK: Nat = 1000n;
 export const TIME_PER_PERIOD: Nat = TIME_PER_BLOCK * BLOCKS_PER_PERIOD;
 
 export const INITIAL_DIFFICULTY: Nat = 2048n;
+
+// Don't accept blocks from 1 hour in the future
+export const DELAY_TOLERANCE: Nat = 60n * 60n * 1000n;
 
 // Block body size
 export const BODY_SIZE = 1280;
