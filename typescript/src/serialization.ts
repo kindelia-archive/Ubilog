@@ -17,6 +17,42 @@ type Nat = bigint;
 
 const HASH = hash.assert;
 
+export function bits_to_uint8array(bits: BitStr): Uint8Array {
+  const buff = new Uint8Array(2 + Math.ceil(bits.length / 8));
+  for (let i = 0; i < bits.length; i += 8) {
+    let numb = 0;
+    for (let j = 0; j < 8; ++j) {
+      numb *= 2;
+      if (bits[i + 8 - j - 1] === "1") {
+        numb += 1;
+      }
+    }
+    buff[Math.floor(i / 8)] = numb;
+  }
+  return buff;
+}
+
+export function serialize_bits_to_uint8array(bits: BitStr): Uint8Array {
+  if (bits.length >= 2 ** 16) {
+    throw `bit string is too large`;
+  }
+  bits = serialize_bits(bits);
+  return bits_to_uint8array(bits);
+}
+
+export function deserialize_bits_from_uint8array(buff: Uint8Array): BitStr {
+  const size = (buff[0] ?? 0) + (buff[1] ?? 0) * 256;
+  let result = bit_str.empty;
+  for (let i = 2; i < buff.length; ++i) {
+    const val = buff[i] ?? 0;
+    for (let j = 0; j < 8 && result.length < size; ++j) {
+      const bit = (val >>> j) & 1 ? "1" : "0";
+      result = bit_str.push(bit)(result);
+    }
+  }
+  return result;
+}
+
 export function serialize_fixed_len(size: number, value: Nat): BitStr {
   if (size > 0) {
     const head = value % 2n === 0n ? "0" : "1";

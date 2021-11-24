@@ -8,6 +8,8 @@ import type { AddressOptPort } from "./lib/address.ts";
 import type { ConfigSchema } from "./lib/confignator/mod.ts";
 import { config_resolver, V } from "./lib/confignator/mod.ts";
 
+import { CONFIG_FILE_NAME } from "./constants.ts"
+
 export type { GetEnv } from "./lib/confignator/mod.ts";
 
 type ConfigTypes = {
@@ -57,7 +59,7 @@ export const DEFAULT_CONFIG = {
 
 export function load_config_file(base_dir: string): JSONValue {
   ensureDirSync(base_dir);
-  const config_path = `${base_dir}/config.json`;
+  const config_path = `${base_dir}/${CONFIG_FILE_NAME}`;
   ensure_text_file(config_path, JSON.stringify(DEFAULT_CONFIG));
   const config_file = Deno.readTextFileSync(config_path);
   const config_data = JSON.parse(config_file);

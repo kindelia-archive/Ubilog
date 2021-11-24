@@ -28,6 +28,6 @@ export type Chain = {
   height: HashMap<Nat>;
   target: HashMap<Nat>;
   seen: HashMap<true>;
-  tip: [U64, Hash];
+  tip: [score: U64, b_hash: Hash];
   mined_slices: HashMap<ImmSet<Slice>>;
 };

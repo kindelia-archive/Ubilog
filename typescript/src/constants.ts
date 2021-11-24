@@ -12,7 +12,7 @@ export const TIME_PER_BLOCK: Nat = 1000n;
 // Readjusts difficulty every 60 seconds
 export const TIME_PER_PERIOD: Nat = TIME_PER_BLOCK * BLOCKS_PER_PERIOD;
 
-export const INITIAL_DIFFICULTY: Nat = 1024n;
+export const INITIAL_DIFFICULTY: Nat = 2048n;
 
 // Block body size
 export const BODY_SIZE = 1280;
@@ -23,3 +23,5 @@ export const DEFAULT_PORT = 16936;
 // Directories
 export const DIR_BLOCKS = "data/blocks";
 export const DIR_MINED = "data/mined";
+
+export const CONFIG_FILE_NAME = "config.json";

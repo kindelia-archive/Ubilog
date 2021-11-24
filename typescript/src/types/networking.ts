@@ -10,10 +10,10 @@ export type Peer = {
   address: AddressPort;
 };
 
-type PutPeers = { ctor: "PutPeers"; peers: AddressPort[] };
-type PutBlock = { ctor: "PutBlock"; block: Block };
-type AskBlock = { ctor: "AskBlock"; b_hash: Hash };
-type PutSlice = { ctor: "PutSlice"; slice: PowSlice };
+export type PutPeers = { ctor: "PutPeers"; peers: AddressPort[] };
+export type PutBlock = { ctor: "PutBlock"; block: Block };
+export type AskBlock = { ctor: "AskBlock"; b_hash: Hash };
+export type PutSlice = { ctor: "PutSlice"; slice: PowSlice };
 export type Message = PutPeers | PutBlock | AskBlock | PutSlice;
 
 // type Mail = {
